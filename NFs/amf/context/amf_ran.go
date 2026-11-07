@@ -1,0 +1,407 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package context
+
+import (
+	"fmt"
+	"net"
+	"strings"
+	"sync"
+
+	"github.com/omec-project/amf/factory"
+	"github.com/omec-project/amf/logger"
+	"github.com/omec-project/amf/metrics"
+	"github.com/omec-project/amf/protos/sdcoreAmfServer"
+	"github.com/omec-project/ngap/v2/ngapConvert"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2/models"
+	mi "github.com/omec-project/util/metricinfo"
+	"go.uber.org/zap"
+)
+
+const (
+	RanPresentGNbId   = 1
+	RanPresentNgeNbId = 2
+	RanPresentN3IwfId = 3
+	RanConnected      = "Connected"
+	RanDisconnected   = "Disconnected"
+)
+
+type AmfRan struct {
+	RanPresent int
+	RanId      *models.GlobalRanNodeId
+	Name       string
+	AnType     models.AccessType
+	GnbIp      string `json:"-"` // TODO to be removed
+	GnbId      string // RanId in string format, i.e.,mcc:mnc:gnbid
+	/* socket Connect*/
+	Conn net.Conn `json:"-"`
+	/* Supported TA List */
+	SupportedTAList []SupportedTAI // TODO SupportedTaList store and recover from DB
+
+	/* RAN UE List */
+	RanUeList map[int64]*RanUe `json:"-"`
+
+	Amf2RanMsgChan chan *sdcoreAmfServer.AmfMessage `json:"-"`
+	/* logger */
+	Log *zap.SugaredLogger `json:"-"`
+
+	ranStateMu sync.RWMutex
+	// statsMu makes "read the list, then write the gauge from it" one step. Every NGAP
+	// message is dispatched in its own goroutine, so a configuration update replacing the
+	// list can otherwise land between another goroutine's snapshot and its write, and that
+	// goroutine then republishes the series this one just retired.
+	statsMu sync.Mutex
+	// removed is set once, under statsMu, by Remove. NGAP handlers run in their own
+	// goroutine and can still be publishing Connected after the SCTP association's teardown
+	// has independently called Remove on this same RAN; without this, that publication lands
+	// after Remove's Disconnected write and resurrects Connected metrics for a dead RAN.
+	removed bool
+}
+
+type SupportedTAI struct {
+	Tai            models.Tai
+	SNssaiList     []models.Snssai
+	RatInformation *ngapType.RATInformation
+}
+
+func NewSupportedTAI() (tai SupportedTAI) {
+	tai.SNssaiList = make([]models.Snssai, 0, MaxNumOfSlice)
+	return
+}
+
+func NewSupportedTAIList() []SupportedTAI {
+	return make([]SupportedTAI, 0, maxNumOfTAI*maxNumOfBroadcastPLMNs)
+}
+
+// NewAmfRanDefault returns a bare AmfRan with Log pre-initialised to the
+// package-level NgapLog. All AmfRan construction paths that lack an address
+// or ID at creation time should use this function so that ran.Log is never
+// nil when ran itself is non-nil.
+func NewAmfRanDefault() *AmfRan {
+	return &AmfRan{Log: logger.NgapLog, RanUeList: make(map[int64]*RanUe)}
+}
+
+// RatInformationForTAC returns the RATInformation advertised by this RAN
+// for the given TAC, or nil when the RAN's NGSetup did not carry the
+// optional extension for that TAC.
+//
+// RATInformation is a Rel-18 NGAP IE (3GPP TS 38.413) carried as an
+// extension of SupportedTAItem; it classifies the cell's RAT (e.g.
+// NRLEO/NRMEO/NRGEO/NROTHERSAT/NbIoT/Unlicensed). Callers typically use
+// the result to upgrade a generic ue.RatType (NR/EUTRA) into an
+// orbit-specific value.
+func (ran *AmfRan) RatInformationForTAC(tac string) *ngapType.RATInformation {
+	ran.RLockRanState()
+	defer ran.RUnlockRanState()
+	for i := range ran.SupportedTAList {
+		if ran.SupportedTAList[i].Tai.Tac == tac {
+			return ran.SupportedTAList[i].RatInformation
+		}
+	}
+	return nil
+}
+
+func (ran *AmfRan) Remove() {
+	// send nf(gnb) status notification
+	gnbStatus := mi.MetricEvent{
+		EventType: mi.CNfStatusEvt,
+		NfStatusData: mi.CNfStatus{
+			NfType:   mi.NfTypeGnb,
+			NfStatus: mi.NfStatusDisconnected, NfName: ran.GnbId,
+		},
+	}
+	if *factory.AmfConfig.Configuration.KafkaInfo.EnableKafka {
+		if err := metrics.StatWriter.PublishNfStatusEvent(gnbStatus); err != nil {
+			ran.Log.Errorf("could not publish NfStatusEvent: %v", err)
+		}
+	}
+
+	ran.markRemoved()
+	ran.Log.Infof("remove RAN Context[ID: %+v]", ran.RanID())
+	ran.RemoveAllUeInRan()
+	if AMF_Self().EnableSctpLb {
+		if ran.GnbId != "" {
+			AMF_Self().DeleteAmfRanId(ran.GnbId)
+		}
+	} else {
+		AMF_Self().DeleteAmfRan(ran.Conn)
+	}
+}
+
+func (ran *AmfRan) NewRanUe(ranUeNgapID int64) (*RanUe, error) {
+	ranUe := RanUe{}
+	self := AMF_Self()
+	amfUeNgapID, err := self.AllocateAmfUeNgapID()
+	if err != nil {
+		ran.Log.Errorln("alloc Amf ue ngap id failed", err)
+		return nil, fmt.Errorf("allocate AMF UE NGAP ID error: %+v", err)
+	}
+	ranUe.AmfUeNgapId = amfUeNgapID
+	ranUe.RanUeNgapId = ranUeNgapID
+	ranUe.Ran = ran
+	ranUe.Log = ran.Log.With(logger.FieldAmfUeNgapID, fmt.Sprintf("AMF_UE_NGAP_ID:%d", ranUe.AmfUeNgapId))
+	ran.ranStateMu.Lock()
+	ran.RanUeList[ranUeNgapID] = &ranUe
+	ran.ranStateMu.Unlock()
+	self.RanUePool.Store(ranUe.AmfUeNgapId, &ranUe)
+	return &ranUe, nil
+}
+
+func (ran *AmfRan) RemoveAllUeInRan() {
+	// snapshot under read lock to avoid deadlock: Remove() acquires write lock
+	ran.ranStateMu.RLock()
+	ranUes := make([]*RanUe, 0, len(ran.RanUeList))
+	for _, ranUe := range ran.RanUeList {
+		ranUes = append(ranUes, ranUe)
+	}
+	ran.ranStateMu.RUnlock()
+	for _, ranUe := range ranUes {
+		if err := ranUe.Remove(); err != nil {
+			logger.ContextLog.Errorf("Remove RanUe error: %v", err)
+		}
+	}
+}
+
+// RanUeFindByRanUeNgapIDLocal looks up RanUeList without acquiring ranStateMu.
+// Callers MUST hold ranStateMu (read or write) before calling this function;
+// for a concurrency-safe lookup from outside this package, use RanUeFindByRanUeNgapID.
+func (ran *AmfRan) RanUeFindByRanUeNgapIDLocal(ranUeNgapID int64) *RanUe {
+	return ran.RanUeList[ranUeNgapID]
+}
+
+func (ran *AmfRan) RanUeFindByRanUeNgapID(ranUeNgapID int64) *RanUe {
+	ran.ranStateMu.RLock()
+	ranUe := ran.RanUeList[ranUeNgapID]
+	ran.ranStateMu.RUnlock()
+
+	if ranUe != nil {
+		return ranUe
+	}
+
+	if AMF_Self().EnableDbStore {
+		// Hold write lock: DbFetchRanUeByRanUeNgapID re-reads the map internally
+		// (via RanUeFindByRanUeNgapIDLocal) and we may write back to the map.
+		ran.ranStateMu.Lock()
+		defer ran.ranStateMu.Unlock()
+		ranUe = DbFetchRanUeByRanUeNgapID(ranUeNgapID, ran)
+		if ranUe != nil {
+			ranUe.Ran = ran
+			ran.RanUeList[ranUeNgapID] = ranUe
+			return ranUe
+		}
+	}
+
+	return nil
+}
+
+func (ran *AmfRan) SetRanId(ranNodeId *ngapType.GlobalRANNodeID) error {
+	ranId, err := ngapConvert.RanIdToModels(*ranNodeId)
+	if err != nil {
+		return fmt.Errorf("set RanId failed: %w", err)
+	}
+	ran.RanPresent = ranNodeId.Present
+	ran.RanId = &ranId
+
+	// Setting RanId in String format with ":" separation of each field
+	if ranId.PlmnId.GetMcc() != "" && ranId.PlmnId.GetMnc() != "" {
+		ran.GnbId = ranId.PlmnId.GetMcc() + ":" + ranId.PlmnId.GetMnc() + ":"
+	}
+	if ranNodeId.Present == ngapType.GlobalRANNodeIDPresentGlobalN3IWFID {
+		ran.AnType = models.ACCESSTYPE_NON_3_GPP_ACCESS
+		ran.GnbId += ranId.GetN3IwfId()
+	} else {
+		ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+		if ranId.GNbId != nil {
+			ran.GnbId += ranId.GNbId.GNBValue
+		}
+	}
+	ran.Log.Debugf("set RanId: %+v, GnbId: %s, AnType: %s", ran.RanId, ran.GnbId, ran.AnType)
+	return nil
+}
+
+func (ran *AmfRan) LockRanState() {
+	ran.ranStateMu.Lock()
+}
+
+func (ran *AmfRan) UnlockRanState() {
+	ran.ranStateMu.Unlock()
+}
+
+func (ran *AmfRan) RLockRanState() {
+	ran.ranStateMu.RLock()
+}
+
+func (ran *AmfRan) RUnlockRanState() {
+	ran.ranStateMu.RUnlock()
+}
+
+type ranStatsSnapshot struct {
+	name            string
+	gnbIP           string
+	supportedTAList []SupportedTAI
+}
+
+func (ran *AmfRan) statsSnapshot() ranStatsSnapshot {
+	ran.RLockRanState()
+	defer ran.RUnlockRanState()
+
+	snapshot := ranStatsSnapshot{
+		name:  ran.Name,
+		gnbIP: ran.GnbIp,
+	}
+
+	if len(ran.SupportedTAList) == 0 {
+		return snapshot
+	}
+
+	snapshot.supportedTAList = make([]SupportedTAI, len(ran.SupportedTAList))
+	copy(snapshot.supportedTAList, ran.SupportedTAList)
+	return snapshot
+}
+
+func (ran *AmfRan) SupportedTAListSnapshot() []SupportedTAI {
+	return ran.statsSnapshot().supportedTAList
+}
+
+func (ran *AmfRan) ConvertGnbIdToRanId(gnbId string) (ranNodeId *models.GlobalRanNodeId) {
+	ranId := models.NewGlobalRanNodeIdWithDefaults()
+	val := strings.Split(gnbId, ":")
+	if len(val) != 3 {
+		return nil
+	}
+	ranId.PlmnId = models.PlmnId{Mcc: val[0], Mnc: val[1]}
+	ranId.GNbId = models.NewGNbIdWithDefaults()
+	ranId.GNbId.SetGNBValue(val[2])
+	ran.RanPresent = RanPresentGNbId
+	return ranId
+}
+
+func (ran *AmfRan) RanID() string {
+	switch ran.RanPresent {
+	case RanPresentGNbId:
+		return fmt.Sprintf("<PlmnID: %+v, GNbID: %s>", ran.RanId.GetPlmnId(), ran.RanId.GNbId.GetGNBValue())
+	case RanPresentN3IwfId:
+		return fmt.Sprintf("<PlmnID: %+v, N3IwfID: %s>", ran.RanId.GetPlmnId(), ran.RanId.GetN3IwfId())
+	case RanPresentNgeNbId:
+		return fmt.Sprintf("<PlmnID: %+v, NgeNbID: %s>", ran.RanId.GetPlmnId(), ran.RanId.GetNgeNbId())
+	default:
+		return ""
+	}
+}
+
+// RetireDepartedTacs removes the exported state of tracking areas the gNB has stopped
+// broadcasting. SetRanStats only ever walks the RAN's *current* list under the RAN's *current*
+// name, so a tracking area dropped by a RAN configuration update is never written again and
+// keeps its last Connected sample for the life of the process - exported state outliving the
+// condition it describes, which is the same fault as a departed gNB still reporting Connected,
+// one level down.
+//
+// previousName and previousGnbIP are the identity the departed list was published under, taken
+// before the caller applied whatever changed. A RAN Node Name IE can rename the RAN in the same
+// request that replaces its TA list, and the gauge's id label is that name: once it changes,
+// nothing ever writes the old name again, so every series under it is orphaned, not only the
+// TACs that left the list. Comparing against the *current* identity therefore decides how much
+// of previous to retire - all of it on a rename, only the departed TACs otherwise - rather than
+// assuming the caller's rename and TA list changes are independent.
+//
+// The series is deleted rather than zeroed: this gNB is still connected, so neither state the
+// label carries is true of a tracking area it no longer serves, or of a name it no longer has.
+func (ran *AmfRan) RetireDepartedTacs(previousName, previousGnbIP string, previous []SupportedTAI) {
+	if len(previous) == 0 {
+		return
+	}
+
+	ran.statsMu.Lock()
+	defer ran.statsMu.Unlock()
+
+	snapshot := ran.statsSnapshot()
+
+	renamed := previousName != snapshot.name || previousGnbIP != snapshot.gnbIP
+
+	kept := make(map[string]struct{}, len(snapshot.supportedTAList))
+	if !renamed {
+		for _, tai := range snapshot.supportedTAList {
+			kept[tai.Tai.Tac] = struct{}{}
+		}
+	}
+
+	for _, tai := range previous {
+		if _, stillServed := kept[tai.Tai.Tac]; stillServed {
+			continue
+		}
+
+		metrics.DeleteGnbSessProfileStats(previousName, previousGnbIP, RanConnected, tai.Tai.Tac)
+		metrics.DeleteGnbSessProfileStats(previousName, previousGnbIP, RanDisconnected, tai.Tai.Tac)
+	}
+}
+
+// SetRanStats records the RAN's connection state on the gnb_session_profile gauge.
+//
+// The state is a label, so writing only the series for the state being entered leaves the
+// series for the state being left at whatever it last held: a gNB that connected and then
+// disconnected went on reporting Connected=1 for the life of the process, and a dashboard
+// summing that series could not see the gNB go away. Both series are written on every
+// transition so that each one means what it says.
+//
+// Once Remove has run, this is a no-op: NGAP handlers run in their own goroutine and a
+// Connected publication already in flight when the association tears down would otherwise
+// land after Remove's Disconnected write and resurrect metrics for a RAN that no longer exists.
+func (ran *AmfRan) SetRanStats(state string) {
+	ran.statsMu.Lock()
+	defer ran.statsMu.Unlock()
+
+	if ran.removed {
+		logger.ContextLog.Debugf("RAN %q was removed, dropping stale %q publication on gnb_session_profile",
+			ran.RanID(), state)
+		return
+	}
+
+	var connected, disconnected uint64
+
+	switch state {
+	case RanConnected:
+		connected, disconnected = 1, 0
+	case RanDisconnected:
+		connected, disconnected = 0, 1
+	default:
+		// Writing both series means the state has to be one of the two the gauge
+		// describes. Treating anything else as disconnected would record a state nobody
+		// asked for, which is the same class of quiet wrongness as the stale series.
+		logger.ContextLog.Warnf("RAN %q state %q is not recorded on gnb_session_profile",
+			ran.RanID(), state)
+		return
+	}
+
+	snapshot := ran.statsSnapshot()
+	for _, tai := range snapshot.supportedTAList {
+		metrics.SetGnbSessProfileStats(snapshot.name, snapshot.gnbIP, RanConnected, tai.Tai.Tac, connected)
+		metrics.SetGnbSessProfileStats(snapshot.name, snapshot.gnbIP, RanDisconnected, tai.Tai.Tac, disconnected)
+	}
+}
+
+// markRemoved records this RAN as torn down and publishes Disconnected one final time, both
+// under statsMu so the two are one step: without that, a concurrent SetRanStats(RanConnected)
+// could interleave between the flag and the write and still publish Connected after removal.
+// Once set, SetRanStats refuses every further publication, including this RAN's own repeated
+// Disconnected writes from an idempotent Remove.
+func (ran *AmfRan) markRemoved() {
+	ran.statsMu.Lock()
+	defer ran.statsMu.Unlock()
+
+	if ran.removed {
+		return
+	}
+	ran.removed = true
+
+	snapshot := ran.statsSnapshot()
+	for _, tai := range snapshot.supportedTAList {
+		metrics.SetGnbSessProfileStats(snapshot.name, snapshot.gnbIP, RanConnected, tai.Tai.Tac, 0)
+		metrics.SetGnbSessProfileStats(snapshot.name, snapshot.gnbIP, RanDisconnected, tai.Tai.Tac, 1)
+	}
+}

@@ -1,0 +1,23 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2022-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.metricfunc.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metricfunc
+  labels:
+{{ tuple "metricfunc" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  type: {{ .Values.config.metricfunc.serviceType }}
+  selector:
+{{ tuple "metricfunc" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.metricfunc.prometheus "TCP" .Values.config.metricfunc.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "api-endpoint" .Values.config.metricfunc.apiEndpoint "TCP" .Values.config.metricfunc.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

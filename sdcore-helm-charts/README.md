@@ -1,0 +1,91 @@
+<!--
+Copyright 2024-present Intel Corporation
+SPDX-License-Identifier: Apache-2.0
+-->
+
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/omec-project/sdcore-helm-charts/badge)](https://scorecard.dev/viewer/?uri=github.com/omec-project/sdcore-helm-charts)
+[![CNTi essential](https://github.com/omec-project/sdcore-helm-charts/raw/badges/cnti-badge.svg)](https://github.com/omec-project/sdcore-helm-charts/actions/workflows/cnti.yml)
+[![GitHub latest release (SemVer)](https://img.shields.io/github/v/release/omec-project/sdcore-helm-charts?sort=semver)](https://github.com/omec-project/sdcore-helm-charts/releases)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://spdx.org/licenses/Apache-2.0.html)
+
+# SDCore Helm Charts
+This repository contains Helm charts for deploying `Aether SD-Core` on Kubernetes.
+
+Note that these Helm Charts can be used to deploy the Aether SD-Core. However,
+the user should override the values.yaml file(s) to be able to properly deploy
+all pods. One simple way to do so is by using the
+[sdcore-5g-values.yaml](https://github.com/opennetworkinglab/aether-onramp/blob/master/deps/5gc/roles/core/templates/sdcore-5g-values.yaml)
+file from [Aether-Onramp](https://docs.aetherproject.org/onramp/overview.html).
+Moreover, some values need to be accordingly updated depending on the specific
+deployment/setup as shown below.
+
+For the 5G control-plane chart, the shared CA private key is stored in a namespace Secret by default so leaf certificates can be regenerated across upgrades. In environments with tighter Secret-access requirements, set `5g-control-plane.config.certs.sharedCA.existingPrivateSecret` to a pre-created Secret containing non-empty `ca.crt` and `ca.key`, and restrict read access to that Secret. When this option is set, the chart now fails fast if that Secret is missing or incomplete instead of generating a replacement CA. Because the chart must read that CA private key at render time to sign the leaf certificates, this option requires rendering with cluster access; offline `helm template` without access to that Secret is not supported. If your cluster DNS domain is not `cluster.local`, set `5g-control-plane.config.certs.clusterDomain` accordingly or to an empty string to omit the fully-qualified service SAN. You can tune `5g-control-plane.config.certs.leafValidityDays` and `5g-control-plane.config.certs.clusterDomain` to affect newly rendered leaf certificates, and the chart will reissue leaf Secrets when those inputs change. `5g-control-plane.config.certs.sharedCA.validityDays` only affects newly generated CAs, so changing it does not automatically rotate an existing shared CA Secret. You can also set `5g-control-plane.config.certs.includeSystemRootBundle=false` if you want the generated CA bundle to contain only the shared CA instead of roots copied from the init image.
+
+The control plane's Kafka is not deployed by default. Set `5g-control-plane.kafka.enabled=true` to use the [Strimzi Kafka Operator](https://strimzi.io), a cluster prerequisite like cert-manager. The default Kafka version, 4.2.2, requires Strimzi 1.3.0 or later; with an older operator, set `5g-control-plane.kafka.version` to a version your operator supports. The chart then declares a single dual-role (broker and controller) `Kafka`/`KafkaNodePool`, plus a plain Service named `kafka` in front of it so the network functions' hardcoded `kafka:9092` broker address keeps working unchanged. This path has no tested reference deployment yet; treat it as a starting point that needs validation against a real Strimzi install before relying on it.
+
+The chart no longer deploys the Bitnami MongoDB and Kafka subcharts. MongoDB runs through the MongoDB Kubernetes operator by default (set `5g-control-plane.mongodb.password`), which is another cluster prerequisite. Alternatively, set `mongodb.enabled=false` and point `5g-control-plane.config.mongodb.url` and `authUrl` at an external MongoDB.
+
+## Versioning
+
+All charts in this repository share one version, taken from the `VERSION` file
+when they are published; the `version` fields in the `Chart.yaml` files stay at
+`0.0.0` and are not edited in pull requests.
+
+- When `VERSION` is a release, for example `5.1.0`, every chart is published as
+  `5.1.0`, and the umbrella chart depends on its sibling charts at `5.1.0`.
+- On any other merge to `main`, with `VERSION` at `5.1.0-dev`, every chart is
+  published as a pre-release, `5.1.0-dev.<run number>`. Version ranges such as
+  `^5.0.0` or `5.1.x` don't select pre-releases, so they are installed only when
+  asked for by their exact version.
+
+A release is a pull request that removes `-dev` from `VERSION`, as in the
+component repositories; after the merge, `VERSION` moves on to the next `-dev`.
+
+## Example of usage with Aether OnRamp
+
+It is strongly recommended to use [Aether-Onramp](https://docs.aetherproject.org/onramp/overview.html)
+for the deployment of the `SD-Core` because `OnRamp`, besides deploying the
+`SD-Core`, it also takes care of the networking required for the packets to be
+forwarded across the 5GC.
+
+
+```diff
+diff --git a/roles/core/templates/sdcore-5g-values.yaml b/roles/core/templates/sdcore-5g-values.yaml
+index defb44a..bcd9f4b 100644
+--- a/roles/core/templates/sdcore-5g-values.yaml
++++ b/roles/core/templates/sdcore-5g-values.yaml
+@@ -56,7 +56,7 @@ omec-control-plane:
+     sctplb:
+       deploy: true # If enabled then deploy sctp pod
+       ngapp:
+-        externalIp: {{ core.amf.ip }}
++        externalIp: <IP-address-for-N2-interface>
+         port: 38412
+
+     upfadapter:
+@@ -315,20 +315,20 @@ omec-user-plane:
+       hugepage:
+         enabled: false    # Should be enabled if DPDK is enabled
+       routes:
+-        - to: {{ ansible_default_ipv4.address }}
++        - to: <your-host-IP> # Host where the UPF pod will be deployed
+           via: 169.254.1.1
+       ran:
+-        subnet: {{ ran_subnet }} # Subnet for the gNB network
++        subnet: <the-ran-subnet-to-use> # Subnet for the gNB network
+       access:
+         ipam: static
+         cniPlugin: macvlan  # Can be any other plugin. Dictates how IP address are assigned
+-        iface: {{ core.data_iface }}
++        iface: <interface-for-N3-interface>
+         gateway: 192.168.252.1
+         ip: 192.168.252.3/24
+       core:
+         ipam: static
+         cniPlugin: macvlan  # Can be any other plugin. Dictates how IP address are assigned
+-        iface: {{ core.data_iface }}
++        iface: <interface-for-N6-interface>
+         gateway: 192.168.250.1
+         ip: 192.168.250.3/24
+       cfgFiles:
+```

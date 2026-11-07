@@ -1,0 +1,26 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.sctplb.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sctplb
+  labels:
+{{ tuple "sctplb" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  type: {{ .Values.config.sctplb.serviceType }}
+{{- if .Values.config.sctplb.ngapp.externalIp }}
+  externalIPs:
+    - {{ .Values.config.sctplb.ngapp.externalIp }}
+{{- end }}
+  selector:
+{{ tuple "sctplb" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "ngapp" .Values.config.sctplb.ngapp "SCTP" .Values.config.sctplb.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

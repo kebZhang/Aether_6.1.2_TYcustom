@@ -1,0 +1,5538 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+openapi: 3.0.0
+info:
+  description: |
+    LMF Location Service.
+    © 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.
+  title: LMF Location
+  version: 1.3.0-alpha.6
+externalDocs:
+  description: 3GPP TS 29.572 V18.5.0; 5G System; Location Management Services; Stage 3
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.572/
+servers:
+  - url: "{apiRoot}/nlmf-loc/v1"
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 4.4 of 3GPP TS 29.501
+security:
+  - {}
+  - oAuth2ClientCredentials:
+      - nlmf-loc
+paths:
+  /determine-location:
+    post:
+      callbacks:
+        EventNotify:
+          '{$request.body#/hgmlcCallBackURI}':
+            post:
+              operationId: EventNotifyPost
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/EventNotifyDataExt"
+                description: UE Event Notification
+              responses:
+                "204":
+                  description: Expected response to a valid notification
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+                "504":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Gateway Timeout
+                default:
+                  description: Generic Error
+              x-callback-request: true
+      operationId: DetermineLocation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InputData"
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataLppMessage:
+                contentType: application/vnd.3gpp.lpp
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataLppMessageExt1:
+                contentType: application/vnd.3gpp.lpp
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataLppMessageExt2:
+                contentType: application/vnd.3gpp.lpp
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/DetermineLocation_request"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationDataExt"
+          description: Expected response to a valid request
+        "204":
+          description: Expected response for MO-LR requesting location assistance data.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:determine-location:invoke
+      summary: Determine Location of an UE
+      tags:
+        - Determine Location
+  /up-subscriptions:
+    post:
+      callbacks:
+        UPNotify:
+          '{$request.body#/upNotifyCallBackUri}':
+            post:
+              operationId: UPNotifyPost
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/UpNotifyData"
+                description: UP Connection Status Notification
+              responses:
+                "204":
+                  description: Expected response to a valid notification
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+                "504":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Gateway Timeout
+                default:
+                  description: Generic Error
+              x-callback-request: true
+      operationId: UpSubscriptions
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpSubscription"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpSubscription"
+          description: Expected response to successful UP Subscription
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:up-subscription:invoke
+      summary: subscribe about status of a secure LCS-UP connection for a target UE
+      tags:
+        - UP Subscribe
+  /up-subscriptions/{subscriptionId}:
+    delete:
+      operationId: DeleteSubscription
+      parameters:
+        - description: Unique subscription Id
+          explode: false
+          in: path
+          name: subscriptionId
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        "204":
+          description: Expected response to a successful subscription removal
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "501":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Implemented
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Generic Error
+      summary: Deletes a subscription
+      tags:
+        - UP Unsubscribe
+  /cancel-location:
+    post:
+      operationId: CancelLocation
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CancelLocData"
+        required: true
+      responses:
+        "204":
+          description: Expected response to a successful cancellation
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:cancel-location:invoke
+      summary: request cancellation of periodic or triggered location
+      tags:
+        - Cancel Location
+  /location-context-transfer:
+    post:
+      operationId: LocationContextTransfer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocContextData"
+        required: true
+      responses:
+        "204":
+          description: Expected response to successful location context transfer
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:location-context-transfer:invoke
+      summary: transfer context information for periodic or triggered location
+      tags:
+        - Location Context Transfer
+  /measure-location:
+    post:
+      operationId: LocationMeasure
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocMeasurementReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocMeasurementResp"
+          description: Expected response to a valid request
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:measure-location:invoke
+      summary: PRU location measurement
+      tags:
+        - Location Measure
+  /configure-up:
+    post:
+      operationId: UpConfig
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpConfig"
+        required: true
+      responses:
+        "204":
+          description: "Expected response to successful set up, modify or terminate LCS-UP connection."
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+        - oAuth2ClientCredentials:
+            - nlmf-loc
+            - nlmf-loc:configure-up:invoke
+      summary: "set up, modify or terminate a secure LCS-UP connection for a target UE"
+      tags:
+        - UP Configure
+components:
+  responses:
+    "307":
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RedirectResponse"
+      description: Temporary Redirect
+      headers:
+        Location:
+          description: The URI pointing to the resource located on the redirect target
+          required: true
+          schema:
+            type: string
+        "3gpp-Sbi-Target-Nf-Id":
+          description: |
+            'Identifier of target NF (service) instance towards which the request is redirected'
+          schema:
+            type: string
+    "308":
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/RedirectResponse"
+      description: Permanent Redirect
+      headers:
+        Location:
+          description: The URI pointing to the resource located on the redirect target
+          required: true
+          schema:
+            type: string
+        "3gpp-Sbi-Target-Nf-Id":
+          description: |
+            'Identifier of target NF (service) instance towards which the request is redirected'
+          schema:
+            type: string
+    "400":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Bad request
+    "401":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Unauthorized
+    "403":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Forbidden
+    "404":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Not Found
+    "411":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Length Required
+    "413":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Content Too Large
+    "415":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Unsupported Media Type
+    "429":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Too Many Requests
+    "500":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Internal Server Error
+    "502":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Bad Gateway
+    "503":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Service Unavailable
+    "504":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Gateway Timeout
+    default:
+      description: Generic Error
+    "501":
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/ProblemDetails"
+      description: Not Implemented
+  schemas:
+    InputData:
+      description: Information within Determine Location Request.
+      example:
+        externalClientType: EMERGENCY_SERVICES
+        correlationID: correlationID
+        amfId: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+        locationQoS:
+          hAccuracy: null
+          vAccuracy: null
+          verticalRequested: true
+          responseTime: LOW_DELAY
+          minorLocQoses:
+            - hAccuracy: null
+              vAccuracy: null
+            - hAccuracy: null
+              vAccuracy: null
+          lcsQosClass: BEST_EFFORT
+        supportedGADShapes:
+          - POINT
+          - POINT
+        supi: supi
+        pei: pei
+        gpsi: gpsi
+        requestedRangingSlResult:
+          - ABSOLUTE_LOCATION
+          - ABSOLUTE_LOCATION
+        relatedUEs:
+          - applicationlayerId: null
+            relatedUEType: LOCATED_UE
+          - applicationlayerId: null
+            relatedUEType: LOCATED_UE
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ecgiOnSecondNode:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        ncgiOnSecondNode:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        priority: HIGHEST_PRIORITY
+        velocityRequested: VELOCITY_IS_NOT_REQUESTED
+        ueLcsCap:
+          lppSupport: true
+          ciotOptimisation: false
+        lcsServiceType: 10
+        ldrType: UE_AVAILABLE
+        hgmlcCallBackURI: hgmlcCallBackURI
+        lirGmlcCallBackUri: lirGmlcCallBackUri
+        vgmlcAddress: vgmlcAddress
+        ldrReference: ldrReference
+        lirReference: lirReference
+        periodicEventInfo:
+          reportingAmount: null
+          reportingInterval: null
+          reportingInfiniteInd: true
+          reportingIntervalMs: null
+        areaEventInfo:
+          areaDefinition:
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+          occurrenceInfo: ONE_TIME_EVENT
+          minimumInterval: null
+          maximumInterval: null
+          samplingInterval: null
+          reportingDuration: null
+          reportingLocationReq: true
+        motionEventInfo:
+          linearDistance: null
+          occurrenceInfo: null
+          minimumInterval: null
+          maximumInterval: null
+          samplingInterval: null
+          reportingDuration: null
+          reportingLocationReq: true
+        reportingAccessTypes:
+          - NR
+          - NR
+        ueConnectivityStates:
+          accessType: 3GPP_ACCESS
+          connectivitystate: IDLE
+        ueLocationServiceInd: LOCATION_ESTIMATE
+        moAssistanceDataTypes:
+          locationAssistanceType: null
+        lppMessage:
+          contentId: contentId
+        lppMessageExt:
+          - contentId: contentId
+          - contentId: contentId
+        supportedFeatures: supportedFeatures
+        uePositioningCap: uePositioningCap
+        tnapId:
+          ssId: ssId
+          bssId: bssId
+          civicAddress: null
+        twapId:
+          ssId: ssId
+          bssId: bssId
+          civicAddress: null
+        ueCountryDetInd: true
+        scheduledLocTime: 2000-01-23T04:56:07.000+00:00
+        reliableLocReq: false
+        evtRptAllowedAreas:
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+        ueUnawareInd: true
+        intermediateLocationInd: false
+        maxRespTime: 6
+        lpHapType: LOW_POW_HIGH_ACCU_POS
+        ueUpPosCaps:
+          - LCS-UPP
+          - LCS-UPP
+        reportingInd: ""
+        mbsrInfo:
+          ncgi:
+            plmnId:
+              mcc: null
+              mnc: null
+            nrCellId: null
+            nid: null
+          ecgi:
+            plmnId:
+              mcc: null
+              mnc: null
+            eutraCellId: null
+            nid: null
+        integrityRequirements:
+          timeToAlert: null
+          targetIntegrityRisk: null
+          alertLimit:
+            horizontalProtectionLevel: null
+            verticalProtectionLevel: null
+        upLocRepAddrAf:
+          ipv4Addrs:
+            - 198.51.100.1
+            - 198.51.100.1
+          ipv6Addrs:
+            - 2001:db8:85a3::8a2e:370:7334
+            - 2001:db8:85a3::8a2e:370:7334
+          fqdn: null
+        upCumEvtRptCriteria:
+          evtRptTimeCriteria: 1
+          evtRptCountCriteria: 5
+        mappedQoSEps:
+          hAccuracy: null
+          vAccuracy: null
+        additionalUeInfo:
+          ncgi:
+            plmnId:
+              mcc: null
+              mnc: null
+            nrCellId: null
+            nid: null
+          ecgi:
+            plmnId:
+              mcc: null
+              mnc: null
+            eutraCellId: null
+            nid: null
+        coordinateID: 5
+        rangingSlCapability: rangingSlCapability
+      not:
+        required:
+          - ecgi
+          - ncgi
+      properties:
+        externalClientType:
+          $ref: "#/components/schemas/ExternalClientType"
+        correlationID:
+          description: LCS Correlation ID.
+          maxLength: 255
+          minLength: 1
+          type: string
+        amfId:
+          description: |
+            String uniquely identifying a NF instance. The format of the NF Instance ID shall be a Universally Unique Identifier (UUID) version 4, as described in IETF RFC 4122.
+          format: uuid
+          type: string
+        locationQoS:
+          $ref: "#/components/schemas/LocationQoS"
+        supportedGADShapes:
+          items:
+            $ref: "#/components/schemas/SupportedGADShapes"
+          minItems: 1
+          type: array
+        supi:
+          description: |
+            String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause
+            2.2A of 3GPP TS 23.003. It shall be formatted as follows
+             - for an IMSI "imsi-<imsi>", where <imsi> shall be formatted according to clause 2.2
+               of 3GPP TS 23.003 that describes an IMSI.
+             - for a network specific identifier "nai-<nai>, where <nai> shall be formatted
+               according to clause 28.7.2 of 3GPP TS 23.003 that describes an NAI.
+             - for a GCI "gci-<gci>", where <gci> shall be formatted according to clause 28.15.2
+               of 3GPP TS 23.003.
+             - for a GLI "gli-<gli>", where <gli> shall be formatted according to clause 28.16.2 of
+               3GPP TS 23.003.To enable that the value is used as part of an URI, the string shall
+               only contain characters allowed according to the "lower-with-hyphen" naming convention
+               defined in 3GPP TS 29.501.
+          pattern: "^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+          type: string
+        pei:
+          description: |
+            String representing a Permanent Equipment Identifier that may contain - an IMEI or IMEISV, as  specified in clause 6.2 of 3GPP TS 23.003; a MAC address for a 5G-RG or FN-RG via wireline  access, with an indication that this address cannot be trusted for regulatory purpose if this  address cannot be used as an Equipment Identifier of the FN-RG, as specified in clause 4.7.7  of 3GPP TS23.316. Examples are imei-012345678901234 or imeisv-0123456789012345.
+          pattern: "^(imei-[0-9]{15}|imeisv-[0-9]{16}|mac((-[0-9a-fA-F]{2}){6})(-untrusted)?|eui((-[0-9a-fA-F]{2}){8})|.+)$"
+          type: string
+        gpsi:
+          description: |
+            String identifying a Gpsi shall contain either an External Id or an MSISDN. It shall be formatted as follows -External Identifier= "extid-'extid', where 'extid' shall be formatted according to clause 19.7.2 of 3GPP TS 23.003 that describes an External Identifier.
+          pattern: "^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+          type: string
+        requestedRangingSlResult:
+          items:
+            $ref: "#/components/schemas/RangingSlResult"
+          minItems: 1
+          type: array
+        relatedUEs:
+          items:
+            $ref: "#/components/schemas/RelatedUE"
+          minItems: 1
+          type: array
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+        ecgiOnSecondNode:
+          $ref: "#/components/schemas/Ecgi"
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        ncgiOnSecondNode:
+          $ref: "#/components/schemas/Ncgi"
+        priority:
+          $ref: "#/components/schemas/LcsPriority"
+        velocityRequested:
+          $ref: "#/components/schemas/VelocityRequested"
+        ueLcsCap:
+          $ref: "#/components/schemas/UeLcsCapability"
+        lcsServiceType:
+          description: LCS service type.
+          maximum: 127
+          minimum: 0
+          type: integer
+        ldrType:
+          $ref: "#/components/schemas/LdrType"
+        hgmlcCallBackURI:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        lirGmlcCallBackUri:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        vgmlcAddress:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        ldrReference:
+          description: LDR Reference.
+          maxLength: 510
+          minLength: 2
+          type: string
+        lirReference:
+          description: LIR Reference.
+          maxLength: 510
+          minLength: 2
+          type: string
+        periodicEventInfo:
+          $ref: "#/components/schemas/PeriodicEventInfo"
+        areaEventInfo:
+          $ref: "#/components/schemas/AreaEventInfo"
+        motionEventInfo:
+          $ref: "#/components/schemas/MotionEventInfo"
+        reportingAccessTypes:
+          items:
+            $ref: "#/components/schemas/ReportingAccessType"
+          minItems: 1
+          type: array
+        ueConnectivityStates:
+          $ref: "#/components/schemas/UeConnectivityState"
+        ueLocationServiceInd:
+          $ref: "#/components/schemas/UeLocationServiceInd"
+        moAssistanceDataTypes:
+          $ref: "#/components/schemas/LcsBroadcastAssistanceTypesData"
+        lppMessage:
+          $ref: "#/components/schemas/RefToBinaryData"
+        lppMessageExt:
+          description: Indicates the lpp message extension.
+          items:
+            $ref: "#/components/schemas/RefToBinaryData"
+          minItems: 1
+          type: array
+        supportedFeatures:
+          description: |
+            A string used to indicate the features supported by an API that is used as defined in clause 6.6 in 3GPP TS 29.500. The string shall contain a bitmask indicating supported features in hexadecimal representation Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent the support of 4 features as described in table 5.2.2-3. The most significant character representing the highest-numbered features shall  appear first in the string, and the character representing features 1 to 4 shall appear last  in the string. The list of features and their numbering (starting with 1) are defined  separately for each API. If the string contains a lower number of characters than there are  defined features for an API, all features that would be represented by characters that are not  present in the string are not supported.
+          pattern: "^[A-Fa-f0-9]*$"
+          type: string
+        uePositioningCap:
+          description: Positioning capabilities supported by the UE. A string encoding the "ProvideCapabilities-r9-IEs" IE as specified in clause 6.3 of 3GPP TS 37.355 (start from octet 1).
+          format: byte
+          type: string
+        tnapId:
+          $ref: "#/components/schemas/TnapId"
+        twapId:
+          $ref: "#/components/schemas/TwapId"
+        ueCountryDetInd:
+          type: boolean
+        scheduledLocTime:
+          description: string with format 'date-time' as defined in OpenAPI.
+          format: date-time
+          type: string
+        reliableLocReq:
+          default: false
+          type: boolean
+        evtRptAllowedAreas:
+          items:
+            $ref: "#/components/schemas/ReportingArea"
+          maxItems: 250
+          minItems: 1
+          type: array
+        ueUnawareInd:
+          type: boolean
+        intermediateLocationInd:
+          default: false
+          type: boolean
+        maxRespTime:
+          description: indicating a time in seconds.
+          type: integer
+        lpHapType:
+          $ref: "#/components/schemas/LpHapType"
+        ueUpPosCaps:
+          items:
+            $ref: "#/components/schemas/UeUpPositioningCapabilities"
+          minItems: 1
+          type: array
+        reportingInd:
+          allOf:
+            - $ref: "#/components/schemas/ReportingInd"
+          default: INSIDE_REPORTING
+        mbsrInfo:
+          $ref: "#/components/schemas/MbsrInfo"
+        integrityRequirements:
+          $ref: "#/components/schemas/IntegrityRequirements"
+        upLocRepAddrAf:
+          $ref: "#/components/schemas/UpLocRepAddrAfRm"
+        upCumEvtRptCriteria:
+          $ref: "#/components/schemas/UpCumEvtRptCriteria"
+        mappedQoSEps:
+          $ref: "#/components/schemas/MappedLocationQoSEps"
+        additionalUeInfo:
+          $ref: "#/components/schemas/AdditionalUeInfo"
+        coordinateID:
+          type: integer
+        rangingSlCapability:
+          description: Ranging/Sidelink Positioning Positioning capabilities supported by the UE.
+          format: byte
+          type: string
+      type: object
+    LocationDataExt:
+      allOf:
+        - $ref: "#/components/schemas/LocationData"
+        - $ref: "#/components/schemas/AddLocationDatas"
+      description: Extended Location Data for UEs
+      example:
+        locationEstimate:
+          shape: POINT
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        accuracyFulfilmentIndicator: REQUESTED_ACCURACY_FULFILLED
+        ageOfLocationEstimate: null
+        timestampOfLocationEstimate: null
+        velocityEstimate:
+          hSpeed: null
+          bearing: null
+        civicAddress:
+          country: country
+          A1: A1
+          A2: A2
+          A3: A3
+          A4: A4
+          A5: A5
+          A6: A6
+          PRD: PRD
+          POD: POD
+          STS: STS
+          HNO: HNO
+          HNS: HNS
+          LMK: LMK
+          LOC: LOC
+          NAM: NAM
+          PC: PC
+          BLD: BLD
+          UNIT: UNIT
+          FLR: FLR
+          ROOM: ROOM
+          PLC: PLC
+          PCN: PCN
+          POBOX: POBOX
+          ADDCODE: ADDCODE
+          SEAT: SEAT
+          RD: RD
+          RDSEC: RDSEC
+          RDBR: RDBR
+          RDSUBBR: RDSUBBR
+          PRM: PRM
+          POM: POM
+          usageRules: usageRules
+          method: method
+          providedBy: providedBy
+        localLocationEstimate:
+          shape: null
+          localOrigin:
+            coordinateId: coordinateId
+            point:
+              lon: -151.1701851434036
+              lat: 18.494211295267263
+          point:
+            x: null
+            "y": null
+            z: null
+          uncertaintyEllipse:
+            semiMajor: null
+            semiMinor: null
+            orientationMajor: null
+          confidence: null
+        positioningDataList:
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+        gnssPositioningDataList:
+          - mode: null
+            gnss: GPS
+            usage: null
+          - mode: null
+            gnss: GPS
+            usage: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        altitude: null
+        barometricPressure: null
+        servingLMFIdentification: null
+        uePositioningCap: null
+        ueAreaInd:
+          country: country
+          internationalAreaInd: false
+        supportedFeatures: null
+        achievedQos:
+          hAccuracy: null
+          vAccuracy: null
+        directReportInd: false
+        indoorOutdoorInd: INDOOR
+        acceptedPeriodicEventInfo:
+          reportingAmount: null
+          reportingInterval: null
+          reportingInfiniteInd: true
+          reportingIntervalMs: null
+        haGnssMetrics:
+          nrOfUsedSatellites: 38
+          hdopi: 144
+          pdopi: 59
+          age: 69
+          fixType: CARRIER_PHASE_FLOAT
+        losNlosMeasureInd: LOS
+        relatedApplicationlayerId: null
+        distanceDirection:
+          distance: 9.301444243932576
+          azimuthDirection: null
+          elevationDirection: null
+        "2dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          orientationAngle: null
+        "3dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          verticalUncertainty: null
+          orientationAngle: null
+        relativeVelocity: null
+        rangingSlCapability: null
+        addLocationDatas:
+          - locationEstimate: null
+            accuracyFulfilmentIndicator: null
+            ageOfLocationEstimate: null
+            timestampOfLocationEstimate: null
+            velocityEstimate: null
+            civicAddress:
+              country: country
+              A1: A1
+              A2: A2
+              A3: A3
+              A4: A4
+              A5: A5
+              A6: A6
+              PRD: PRD
+              POD: POD
+              STS: STS
+              HNO: HNO
+              HNS: HNS
+              LMK: LMK
+              LOC: LOC
+              NAM: NAM
+              PC: PC
+              BLD: BLD
+              UNIT: UNIT
+              FLR: FLR
+              ROOM: ROOM
+              PLC: PLC
+              PCN: PCN
+              POBOX: POBOX
+              ADDCODE: ADDCODE
+              SEAT: SEAT
+              RD: RD
+              RDSEC: RDSEC
+              RDBR: RDBR
+              RDSUBBR: RDSUBBR
+              PRM: PRM
+              POM: POM
+              usageRules: usageRules
+              method: method
+              providedBy: providedBy
+            localLocationEstimate: null
+            positioningDataList:
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+            gnssPositioningDataList:
+              - mode: null
+                gnss: GPS
+                usage: null
+              - mode: null
+                gnss: GPS
+                usage: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+            altitude: null
+            barometricPressure: null
+            servingLMFIdentification: null
+            uePositioningCap: null
+            ueAreaInd:
+              country: country
+              internationalAreaInd: false
+            supportedFeatures: null
+            achievedQos:
+              hAccuracy: null
+              vAccuracy: null
+            directReportInd: false
+            indoorOutdoorInd: null
+            acceptedPeriodicEventInfo:
+              reportingAmount: null
+              reportingInterval: null
+              reportingInfiniteInd: true
+              reportingIntervalMs: null
+            haGnssMetrics:
+              nrOfUsedSatellites: 38
+              hdopi: 144
+              pdopi: 59
+              age: 69
+              fixType: CARRIER_PHASE_FLOAT
+            losNlosMeasureInd: null
+            relatedApplicationlayerId: null
+            distanceDirection:
+              distance: 9.301444243932576
+              azimuthDirection: null
+              elevationDirection: null
+            "2dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              orientationAngle: null
+            "3dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              verticalUncertainty: null
+              orientationAngle: null
+            relativeVelocity: null
+            rangingSlCapability: null
+          - locationEstimate: null
+            accuracyFulfilmentIndicator: null
+            ageOfLocationEstimate: null
+            timestampOfLocationEstimate: null
+            velocityEstimate: null
+            civicAddress:
+              country: country
+              A1: A1
+              A2: A2
+              A3: A3
+              A4: A4
+              A5: A5
+              A6: A6
+              PRD: PRD
+              POD: POD
+              STS: STS
+              HNO: HNO
+              HNS: HNS
+              LMK: LMK
+              LOC: LOC
+              NAM: NAM
+              PC: PC
+              BLD: BLD
+              UNIT: UNIT
+              FLR: FLR
+              ROOM: ROOM
+              PLC: PLC
+              PCN: PCN
+              POBOX: POBOX
+              ADDCODE: ADDCODE
+              SEAT: SEAT
+              RD: RD
+              RDSEC: RDSEC
+              RDBR: RDBR
+              RDSUBBR: RDSUBBR
+              PRM: PRM
+              POM: POM
+              usageRules: usageRules
+              method: method
+              providedBy: providedBy
+            localLocationEstimate: null
+            positioningDataList:
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+            gnssPositioningDataList:
+              - mode: null
+                gnss: GPS
+                usage: null
+              - mode: null
+                gnss: GPS
+                usage: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+            altitude: null
+            barometricPressure: null
+            servingLMFIdentification: null
+            uePositioningCap: null
+            ueAreaInd:
+              country: country
+              internationalAreaInd: false
+            supportedFeatures: null
+            achievedQos:
+              hAccuracy: null
+              vAccuracy: null
+            directReportInd: false
+            indoorOutdoorInd: null
+            acceptedPeriodicEventInfo:
+              reportingAmount: null
+              reportingInterval: null
+              reportingInfiniteInd: true
+              reportingIntervalMs: null
+            haGnssMetrics:
+              nrOfUsedSatellites: 38
+              hdopi: 144
+              pdopi: 59
+              age: 69
+              fixType: CARRIER_PHASE_FLOAT
+            losNlosMeasureInd: null
+            relatedApplicationlayerId: null
+            distanceDirection:
+              distance: 9.301444243932576
+              azimuthDirection: null
+              elevationDirection: null
+            "2dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              orientationAngle: null
+            "3dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              verticalUncertainty: null
+              orientationAngle: null
+            relativeVelocity: null
+            rangingSlCapability: null
+    LocationData:
+      description: Information within Determine Location Response.
+      example:
+        locationEstimate: null
+        accuracyFulfilmentIndicator: null
+        ageOfLocationEstimate: null
+        timestampOfLocationEstimate: null
+        velocityEstimate: null
+        civicAddress:
+          country: country
+          A1: A1
+          A2: A2
+          A3: A3
+          A4: A4
+          A5: A5
+          A6: A6
+          PRD: PRD
+          POD: POD
+          STS: STS
+          HNO: HNO
+          HNS: HNS
+          LMK: LMK
+          LOC: LOC
+          NAM: NAM
+          PC: PC
+          BLD: BLD
+          UNIT: UNIT
+          FLR: FLR
+          ROOM: ROOM
+          PLC: PLC
+          PCN: PCN
+          POBOX: POBOX
+          ADDCODE: ADDCODE
+          SEAT: SEAT
+          RD: RD
+          RDSEC: RDSEC
+          RDBR: RDBR
+          RDSUBBR: RDSUBBR
+          PRM: PRM
+          POM: POM
+          usageRules: usageRules
+          method: method
+          providedBy: providedBy
+        localLocationEstimate: null
+        positioningDataList:
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+        gnssPositioningDataList:
+          - mode: null
+            gnss: GPS
+            usage: null
+          - mode: null
+            gnss: GPS
+            usage: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        altitude: null
+        barometricPressure: null
+        servingLMFIdentification: null
+        uePositioningCap: null
+        ueAreaInd:
+          country: country
+          internationalAreaInd: false
+        supportedFeatures: null
+        achievedQos:
+          hAccuracy: null
+          vAccuracy: null
+        directReportInd: false
+        indoorOutdoorInd: null
+        acceptedPeriodicEventInfo:
+          reportingAmount: null
+          reportingInterval: null
+          reportingInfiniteInd: true
+          reportingIntervalMs: null
+        haGnssMetrics:
+          nrOfUsedSatellites: 38
+          hdopi: 144
+          pdopi: 59
+          age: 69
+          fixType: CARRIER_PHASE_FLOAT
+        losNlosMeasureInd: null
+        relatedApplicationlayerId: null
+        distanceDirection:
+          distance: 9.301444243932576
+          azimuthDirection: null
+          elevationDirection: null
+        "2dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          orientationAngle: null
+        "3dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          verticalUncertainty: null
+          orientationAngle: null
+        relativeVelocity: null
+        rangingSlCapability: null
+      properties:
+        locationEstimate:
+          $ref: "#/components/schemas/GeographicArea"
+        accuracyFulfilmentIndicator:
+          $ref: "#/components/schemas/AccuracyFulfilmentIndicator"
+        ageOfLocationEstimate:
+          $ref: "#/components/schemas/AgeOfLocationEstimate"
+        timestampOfLocationEstimate:
+          $ref: "#/components/schemas/DateTime"
+        velocityEstimate:
+          $ref: "#/components/schemas/VelocityEstimate"
+        civicAddress:
+          $ref: "#/components/schemas/CivicAddress"
+        localLocationEstimate:
+          $ref: "#/components/schemas/LocalArea"
+        positioningDataList:
+          items:
+            $ref: "#/components/schemas/PositioningMethodAndUsage"
+          minItems: 1
+          type: array
+        gnssPositioningDataList:
+          items:
+            $ref: "#/components/schemas/GnssPositioningMethodAndUsage"
+          minItems: 1
+          type: array
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        altitude:
+          $ref: "#/components/schemas/Altitude"
+        barometricPressure:
+          $ref: "#/components/schemas/BarometricPressure"
+        servingLMFIdentification:
+          $ref: "#/components/schemas/LMFIdentification"
+        uePositioningCap:
+          $ref: "#/components/schemas/UePositioningCapabilities"
+        ueAreaInd:
+          $ref: "#/components/schemas/UeAreaIndication"
+        supportedFeatures:
+          $ref: "#/components/schemas/SupportedFeatures"
+        achievedQos:
+          $ref: "#/components/schemas/MinorLocationQoS"
+        directReportInd:
+          default: false
+          type: boolean
+        indoorOutdoorInd:
+          $ref: "#/components/schemas/IndoorOutdoorInd"
+        acceptedPeriodicEventInfo:
+          $ref: "#/components/schemas/PeriodicEventInfo"
+        haGnssMetrics:
+          $ref: "#/components/schemas/HighAccuracyGnssMetrics"
+        losNlosMeasureInd:
+          $ref: "#/components/schemas/LosNlosMeasureInd"
+        relatedApplicationlayerId:
+          $ref: "#/components/schemas/ApplicationlayerId"
+        distanceDirection:
+          $ref: "#/components/schemas/RangeDirection"
+        "2dRelativeLocation":
+          $ref: "#/components/schemas/twoDRelativeLocation"
+        "3dRelativeLocation":
+          $ref: "#/components/schemas/threeDRelativeLocation"
+        relativeVelocity:
+          $ref: "#/components/schemas/VelocityEstimate"
+        rangingSlCapability:
+          $ref: "#/components/schemas/RangingSlCapability"
+      required:
+        - locationEstimate
+      type: object
+    GeographicArea:
+      anyOf:
+        - $ref: "#/components/schemas/Point"
+        - $ref: "#/components/schemas/PointUncertaintyCircle"
+        - $ref: "#/components/schemas/PointUncertaintyEllipse"
+        - $ref: "#/components/schemas/Polygon"
+        - $ref: "#/components/schemas/PointAltitude"
+        - $ref: "#/components/schemas/PointAltitudeUncertainty"
+        - $ref: "#/components/schemas/EllipsoidArc"
+        - $ref: "#/components/schemas/Local2dPointUncertaintyEllipse"
+        - $ref: "#/components/schemas/Local3dPointUncertaintyEllipsoid"
+      description: Geographic area specified by different shape.
+    GADShape:
+      description: Common base type for GAD shapes.
+      discriminator:
+        mapping:
+          POINT: "#/components/schemas/Point"
+          POINT_UNCERTAINTY_CIRCLE: "#/components/schemas/PointUncertaintyCircle"
+          POINT_UNCERTAINTY_ELLIPSE: "#/components/schemas/PointUncertaintyEllipse"
+          POLYGON: "#/components/schemas/Polygon"
+          POINT_ALTITUDE: "#/components/schemas/PointAltitude"
+          POINT_ALTITUDE_UNCERTAINTY: "#/components/schemas/PointAltitudeUncertainty"
+          ELLIPSOID_ARC: "#/components/schemas/EllipsoidArc"
+          LOCAL_2D_POINT_UNCERTAINTY_ELLIPSE: "#/components/schemas/Local2dPointUncertaintyEllipse"
+          LOCAL_3D_POINT_UNCERTAINTY_ELLIPSOID: "#/components/schemas/Local3dPointUncertaintyEllipsoid"
+        propertyName: shape
+      properties:
+        shape:
+          $ref: "#/components/schemas/SupportedGADShapes"
+      required:
+        - shape
+      type: object
+    Point:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+          required:
+            - point
+          type: object
+      description: Ellipsoid Point.
+      example:
+        shape: POINT
+        point:
+          lon: -151.1701851434036
+          lat: 18.494211295267263
+    PointUncertaintyCircle:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+            uncertainty:
+              $ref: "#/components/schemas/Uncertainty"
+          type: object
+      description: Ellipsoid point with uncertainty circle.
+    PointUncertaintyEllipse:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+            uncertaintyEllipse:
+              $ref: "#/components/schemas/UncertaintyEllipse"
+            confidence:
+              $ref: "#/components/schemas/Confidence"
+          type: object
+      description: Ellipsoid point with uncertainty ellipse.
+    Polygon:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            pointList:
+              $ref: "#/components/schemas/PointList"
+          type: object
+      description: Polygon.
+    PointAltitude:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+            altitude:
+              $ref: "#/components/schemas/Altitude"
+          type: object
+      description: Ellipsoid point with altitude.
+    PointAltitudeUncertainty:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+            altitude:
+              $ref: "#/components/schemas/Altitude"
+            uncertaintyEllipse:
+              $ref: "#/components/schemas/UncertaintyEllipse"
+            uncertaintyAltitude:
+              $ref: "#/components/schemas/Uncertainty"
+            confidence:
+              $ref: "#/components/schemas/Confidence"
+            vConfidence:
+              $ref: "#/components/schemas/Confidence"
+          type: object
+      description: Ellipsoid point with altitude and uncertainty ellipsoid.
+    EllipsoidArc:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            point:
+              $ref: "#/components/schemas/GeographicalCoordinates"
+            innerRadius:
+              $ref: "#/components/schemas/InnerRadius"
+            uncertaintyRadius:
+              $ref: "#/components/schemas/Uncertainty"
+            offsetAngle:
+              $ref: "#/components/schemas/Angle"
+            includedAngle:
+              $ref: "#/components/schemas/Angle"
+            confidence:
+              $ref: "#/components/schemas/Confidence"
+          type: object
+      description: Ellipsoid Arc.
+    LocalOrigin:
+      description: Indicates a Local origin in a reference system
+      example:
+        coordinateId: coordinateId
+        point:
+          lon: -151.1701851434036
+          lat: 18.494211295267263
+      properties:
+        coordinateId:
+          type: string
+        point:
+          $ref: "#/components/schemas/GeographicalCoordinates"
+      type: object
+    RelativeCartesianLocation:
+      description: Relative Cartesian Location
+      example:
+        x: null
+        "y": null
+        z: null
+      properties:
+        x:
+          $ref: "#/components/schemas/Float"
+        "y":
+          $ref: "#/components/schemas/Float"
+        z:
+          $ref: "#/components/schemas/Float"
+      required:
+        - x
+        - "y"
+      type: object
+    LocalArea:
+      description: Local area specified by different shape
+      oneOf:
+        - $ref: "#/components/schemas/Local2dPointUncertaintyEllipse"
+        - $ref: "#/components/schemas/Local3dPointUncertaintyEllipsoid"
+    UeAreaIndication:
+      description: "Indicates area (country, area in a country or international area) where UE is located"
+      example:
+        country: country
+        internationalAreaInd: false
+      nullable: true
+      oneOf: []
+      properties:
+        country:
+          description: Indicates country or area in a country where UE is located
+          type: string
+        internationalAreaInd:
+          default: false
+          description: Indicates international area indication if UE is located in international area
+          type: boolean
+      type: object
+    Local2dPointUncertaintyEllipse:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            localOrigin:
+              $ref: "#/components/schemas/LocalOrigin"
+            point:
+              $ref: "#/components/schemas/RelativeCartesianLocation"
+            uncertaintyEllipse:
+              $ref: "#/components/schemas/UncertaintyEllipse"
+            confidence:
+              $ref: "#/components/schemas/Confidence"
+          type: object
+      description: Local 2D point with uncertainty ellipse
+      example:
+        shape: null
+        localOrigin:
+          coordinateId: coordinateId
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        point:
+          x: null
+          "y": null
+          z: null
+        uncertaintyEllipse:
+          semiMajor: null
+          semiMinor: null
+          orientationMajor: null
+        confidence: null
+    Local3dPointUncertaintyEllipsoid:
+      allOf:
+        - $ref: "#/components/schemas/GADShape"
+        - properties:
+            localOrigin:
+              $ref: "#/components/schemas/LocalOrigin"
+            point:
+              $ref: "#/components/schemas/RelativeCartesianLocation"
+            uncertaintyEllipsoid:
+              $ref: "#/components/schemas/UncertaintyEllipsoid"
+            confidence:
+              $ref: "#/components/schemas/Confidence"
+          required:
+            - confidence
+            - localOrigin
+            - point
+            - uncertaintyEllipsoid
+          type: object
+      description: Local 3D point with uncertainty ellipsoid
+    GeographicalCoordinates:
+      description: Geographical coordinates.
+      example:
+        lon: -151.1701851434036
+        lat: 18.494211295267263
+      properties:
+        lon:
+          format: double
+          maximum: 180
+          minimum: -180
+          type: number
+        lat:
+          format: double
+          maximum: 90
+          minimum: -90
+          type: number
+      required:
+        - lat
+        - lon
+      type: object
+    UncertaintyEllipse:
+      description: Ellipse with uncertainty.
+      example:
+        semiMajor: null
+        semiMinor: null
+        orientationMajor: null
+      properties:
+        semiMajor:
+          $ref: "#/components/schemas/Uncertainty"
+        semiMinor:
+          $ref: "#/components/schemas/Uncertainty"
+        orientationMajor:
+          $ref: "#/components/schemas/Orientation"
+      required:
+        - orientationMajor
+        - semiMajor
+        - semiMinor
+      type: object
+    UncertaintyEllipsoid:
+      description: Ellipsoid with uncertainty
+      properties:
+        semiMajor:
+          $ref: "#/components/schemas/Uncertainty"
+        semiMinor:
+          $ref: "#/components/schemas/Uncertainty"
+        vertical:
+          $ref: "#/components/schemas/Uncertainty"
+        orientationMajor:
+          $ref: "#/components/schemas/Orientation"
+      required:
+        - orientationMajor
+        - semiMajor
+        - semiMinor
+        - vertical
+      type: object
+    PointList:
+      description: List of points.
+      items:
+        $ref: "#/components/schemas/GeographicalCoordinates"
+      maxItems: 15
+      minItems: 3
+      type: array
+    LocationQoS:
+      description: QoS of Location request.
+      example:
+        hAccuracy: null
+        vAccuracy: null
+        verticalRequested: true
+        responseTime: LOW_DELAY
+        minorLocQoses:
+          - hAccuracy: null
+            vAccuracy: null
+          - hAccuracy: null
+            vAccuracy: null
+        lcsQosClass: BEST_EFFORT
+      properties:
+        hAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+        vAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+        verticalRequested:
+          type: boolean
+        responseTime:
+          $ref: "#/components/schemas/ResponseTime"
+        minorLocQoses:
+          items:
+            $ref: "#/components/schemas/MinorLocationQoS"
+          maxItems: 2
+          minItems: 1
+          type: array
+        lcsQosClass:
+          $ref: "#/components/schemas/LcsQosClass"
+      type: object
+    PositioningMethodAndUsage:
+      description: Indicates the usage of a positioning method.
+      example:
+        method: CELLID
+        mode: UE_BASED
+        usage: UNSUCCESS
+        methodCode: 18
+      properties:
+        method:
+          $ref: "#/components/schemas/PositioningMethod"
+        mode:
+          $ref: "#/components/schemas/PositioningMode"
+        usage:
+          $ref: "#/components/schemas/Usage"
+        methodCode:
+          maximum: 31
+          minimum: 16
+          type: integer
+      required:
+        - method
+        - mode
+        - usage
+      type: object
+    GnssPositioningMethodAndUsage:
+      description: Indicates the usage of a Global Navigation Satellite System (GNSS) positioning method.
+      example:
+        mode: null
+        gnss: GPS
+        usage: null
+      properties:
+        mode:
+          $ref: "#/components/schemas/PositioningMode"
+        gnss:
+          $ref: "#/components/schemas/GnssId"
+        usage:
+          $ref: "#/components/schemas/Usage"
+      required:
+        - gnss
+        - mode
+        - usage
+      type: object
+    CivicAddress:
+      description: Indicates a Civic address.
+      example:
+        country: country
+        A1: A1
+        A2: A2
+        A3: A3
+        A4: A4
+        A5: A5
+        A6: A6
+        PRD: PRD
+        POD: POD
+        STS: STS
+        HNO: HNO
+        HNS: HNS
+        LMK: LMK
+        LOC: LOC
+        NAM: NAM
+        PC: PC
+        BLD: BLD
+        UNIT: UNIT
+        FLR: FLR
+        ROOM: ROOM
+        PLC: PLC
+        PCN: PCN
+        POBOX: POBOX
+        ADDCODE: ADDCODE
+        SEAT: SEAT
+        RD: RD
+        RDSEC: RDSEC
+        RDBR: RDBR
+        RDSUBBR: RDSUBBR
+        PRM: PRM
+        POM: POM
+        usageRules: usageRules
+        method: method
+        providedBy: providedBy
+      properties:
+        country:
+          type: string
+        A1:
+          type: string
+        A2:
+          type: string
+        A3:
+          type: string
+        A4:
+          type: string
+        A5:
+          type: string
+        A6:
+          type: string
+        PRD:
+          type: string
+        POD:
+          type: string
+        STS:
+          type: string
+        HNO:
+          type: string
+        HNS:
+          type: string
+        LMK:
+          type: string
+        LOC:
+          type: string
+        NAM:
+          type: string
+        PC:
+          type: string
+        BLD:
+          type: string
+        UNIT:
+          type: string
+        FLR:
+          type: string
+        ROOM:
+          type: string
+        PLC:
+          type: string
+        PCN:
+          type: string
+        POBOX:
+          type: string
+        ADDCODE:
+          type: string
+        SEAT:
+          type: string
+        RD:
+          type: string
+        RDSEC:
+          type: string
+        RDBR:
+          type: string
+        RDSUBBR:
+          type: string
+        PRM:
+          type: string
+        POM:
+          type: string
+        usageRules:
+          type: string
+        method:
+          type: string
+        providedBy:
+          type: string
+      type: object
+    VelocityEstimate:
+      description: Velocity estimate.
+      oneOf:
+        - $ref: "#/components/schemas/HorizontalVelocity"
+        - $ref: "#/components/schemas/HorizontalWithVerticalVelocity"
+        - $ref: "#/components/schemas/HorizontalVelocityWithUncertainty"
+        - $ref: "#/components/schemas/HorizontalWithVerticalVelocityAndUncertainty"
+    HorizontalVelocity:
+      description: Horizontal velocity.
+      example:
+        hSpeed: null
+        bearing: null
+      properties:
+        hSpeed:
+          $ref: "#/components/schemas/HorizontalSpeed"
+        bearing:
+          $ref: "#/components/schemas/Angle"
+      required:
+        - bearing
+        - hSpeed
+      type: object
+    HorizontalWithVerticalVelocity:
+      description: Horizontal and vertical velocity.
+      properties:
+        hSpeed:
+          $ref: "#/components/schemas/HorizontalSpeed"
+        bearing:
+          $ref: "#/components/schemas/Angle"
+        vSpeed:
+          $ref: "#/components/schemas/VerticalSpeed"
+        vDirection:
+          $ref: "#/components/schemas/VerticalDirection"
+      required:
+        - bearing
+        - hSpeed
+        - vDirection
+        - vSpeed
+      type: object
+    HorizontalVelocityWithUncertainty:
+      description: Horizontal velocity with speed uncertainty.
+      properties:
+        hSpeed:
+          $ref: "#/components/schemas/HorizontalSpeed"
+        bearing:
+          $ref: "#/components/schemas/Angle"
+        hUncertainty:
+          $ref: "#/components/schemas/SpeedUncertainty"
+      required:
+        - bearing
+        - hSpeed
+        - hUncertainty
+      type: object
+    HorizontalWithVerticalVelocityAndUncertainty:
+      description: Horizontal and vertical velocity with speed uncertainty.
+      properties:
+        hSpeed:
+          $ref: "#/components/schemas/HorizontalSpeed"
+        bearing:
+          $ref: "#/components/schemas/Angle"
+        vSpeed:
+          $ref: "#/components/schemas/VerticalSpeed"
+        vDirection:
+          $ref: "#/components/schemas/VerticalDirection"
+        hUncertainty:
+          $ref: "#/components/schemas/SpeedUncertainty"
+        vUncertainty:
+          $ref: "#/components/schemas/SpeedUncertainty"
+      required:
+        - bearing
+        - hSpeed
+        - hUncertainty
+        - vDirection
+        - vSpeed
+        - vUncertainty
+      type: object
+    UeLcsCapability:
+      description: Indicates the LCS capability supported by the UE..
+      example:
+        lppSupport: true
+        ciotOptimisation: false
+      properties:
+        lppSupport:
+          default: true
+          type: boolean
+        ciotOptimisation:
+          default: false
+          type: boolean
+      type: object
+    PeriodicEventInfo:
+      description: Indicates the information of periodic event reporting.
+      example:
+        reportingAmount: null
+        reportingInterval: null
+        reportingInfiniteInd: true
+        reportingIntervalMs: null
+      properties:
+        reportingAmount:
+          $ref: "#/components/schemas/ReportingAmount"
+        reportingInterval:
+          $ref: "#/components/schemas/ReportingInterval"
+        reportingInfiniteInd:
+          type: boolean
+        reportingIntervalMs:
+          $ref: "#/components/schemas/ReportingIntervalMs"
+      required:
+        - reportingAmount
+        - reportingInterval
+      type: object
+    AreaEventInfo:
+      description: Indicates the information of area based event reporting.
+      example:
+        areaDefinition:
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+          - areaType: EPS_TRACKING_AREA_IDENTITY
+            tai:
+              plmnId:
+                mcc: null
+                mnc: null
+              tac: null
+              nid: null
+            ecgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              eutraCellId: null
+              nid: null
+            ncgi:
+              plmnId:
+                mcc: null
+                mnc: null
+              nrCellId: null
+              nid: null
+        occurrenceInfo: ONE_TIME_EVENT
+        minimumInterval: null
+        maximumInterval: null
+        samplingInterval: null
+        reportingDuration: null
+        reportingLocationReq: true
+      properties:
+        areaDefinition:
+          items:
+            $ref: "#/components/schemas/ReportingArea"
+          maxItems: 250
+          minItems: 1
+          type: array
+        occurrenceInfo:
+          $ref: "#/components/schemas/OccurrenceInfo"
+        minimumInterval:
+          $ref: "#/components/schemas/MinimumInterval"
+        maximumInterval:
+          $ref: "#/components/schemas/MaximumInterval"
+        samplingInterval:
+          $ref: "#/components/schemas/SamplingInterval"
+        reportingDuration:
+          $ref: "#/components/schemas/ReportingDuration"
+        reportingLocationReq:
+          default: true
+          type: boolean
+      required:
+        - areaDefinition
+      type: object
+    ReportingArea:
+      description: Indicates an area for event reporting.
+      example:
+        areaType: EPS_TRACKING_AREA_IDENTITY
+        tai:
+          plmnId:
+            mcc: null
+            mnc: null
+          tac: null
+          nid: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+      properties:
+        areaType:
+          $ref: "#/components/schemas/ReportingAreaType"
+        tai:
+          $ref: "#/components/schemas/Tai"
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+      required:
+        - areaType
+      type: object
+    MotionEventInfo:
+      description: Indicates the information of motion based event reporting.
+      example:
+        linearDistance: null
+        occurrenceInfo: null
+        minimumInterval: null
+        maximumInterval: null
+        samplingInterval: null
+        reportingDuration: null
+        reportingLocationReq: true
+      properties:
+        linearDistance:
+          $ref: "#/components/schemas/LinearDistance"
+        occurrenceInfo:
+          $ref: "#/components/schemas/OccurrenceInfo"
+        minimumInterval:
+          $ref: "#/components/schemas/MinimumInterval"
+        maximumInterval:
+          $ref: "#/components/schemas/MaximumInterval"
+        samplingInterval:
+          $ref: "#/components/schemas/SamplingInterval"
+        reportingDuration:
+          $ref: "#/components/schemas/ReportingDuration"
+        reportingLocationReq:
+          default: true
+          type: boolean
+      required:
+        - linearDistance
+      type: object
+    CancelLocData:
+      description: Information within Cancel Location Request.
+      example:
+        hgmlcCallBackURI: hgmlcCallBackURI
+        ldrReference: ldrReference
+        supportedFeatures: supportedFeatures
+      properties:
+        hgmlcCallBackURI:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        ldrReference:
+          description: LDR Reference.
+          maxLength: 510
+          minLength: 2
+          type: string
+        supportedFeatures:
+          description: |
+            A string used to indicate the features supported by an API that is used as defined in clause 6.6 in 3GPP TS 29.500. The string shall contain a bitmask indicating supported features in hexadecimal representation Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent the support of 4 features as described in table 5.2.2-3. The most significant character representing the highest-numbered features shall  appear first in the string, and the character representing features 1 to 4 shall appear last  in the string. The list of features and their numbering (starting with 1) are defined  separately for each API. If the string contains a lower number of characters than there are  defined features for an API, all features that would be represented by characters that are not  present in the string are not supported.
+          pattern: "^[A-Fa-f0-9]*$"
+          type: string
+      required:
+        - hgmlcCallBackURI
+        - ldrReference
+      type: object
+    LocContextData:
+      description: Information within Transfer Location Context Request.
+      example:
+        amfId: 046b6c7f-0b8a-43b9-b35d-6489e6daee91
+        locationQoS:
+          hAccuracy: null
+          vAccuracy: null
+          verticalRequested: true
+          responseTime: LOW_DELAY
+          minorLocQoses:
+            - hAccuracy: null
+              vAccuracy: null
+            - hAccuracy: null
+              vAccuracy: null
+          lcsQosClass: BEST_EFFORT
+        supportedGADShapes:
+          - POINT
+          - POINT
+        supi: supi
+        gpsi: gpsi
+        ldrType: UE_AVAILABLE
+        hgmlcCallBackURI: hgmlcCallBackURI
+        ldrReference: ldrReference
+        periodicEventInfo:
+          reportingAmount: null
+          reportingInterval: null
+          reportingInfiniteInd: true
+          reportingIntervalMs: null
+        areaEventInfo:
+          areaDefinition:
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+            - areaType: EPS_TRACKING_AREA_IDENTITY
+              tai:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                tac: null
+                nid: null
+              ecgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                eutraCellId: null
+                nid: null
+              ncgi:
+                plmnId:
+                  mcc: null
+                  mnc: null
+                nrCellId: null
+                nid: null
+          occurrenceInfo: ONE_TIME_EVENT
+          minimumInterval: null
+          maximumInterval: null
+          samplingInterval: null
+          reportingDuration: null
+          reportingLocationReq: true
+        motionEventInfo:
+          linearDistance: null
+          occurrenceInfo: null
+          minimumInterval: null
+          maximumInterval: null
+          samplingInterval: null
+          reportingDuration: null
+          reportingLocationReq: true
+        eventReportMessage:
+          eventClass: SUPPLEMENTARY_SERVICES
+          eventContent:
+            contentId: contentId
+        eventReportingStatus:
+          eventReportCounter: null
+          eventReportDuration: null
+        ueLocationInfo:
+          locationEstimate:
+            shape: POINT
+            point:
+              lon: -151.1701851434036
+              lat: 18.494211295267263
+          ageOfLocationEstimate: null
+          timestampOfLocationEstimate: null
+          velocityEstimate:
+            hSpeed: null
+            bearing: null
+          ageOfVelocityEstimate: null
+          timestampOfVelocityEstimate: null
+        cIoT5GSOptimisation: false
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        guami:
+          plmnId:
+            mcc: null
+            mnc: null
+            nid: null
+          amfId: null
+        supportedFeatures: supportedFeatures
+        uePositioningCap: uePositioningCap
+        scheduledLocTime: 2000-01-23T04:56:07.000+00:00
+        indoorOutdoorInd: INDOOR
+        losNlosMeasureInd: LOS
+        upCumEvtRptCriteria:
+          evtRptTimeCriteria: 1
+          evtRptCountCriteria: 5
+      properties:
+        amfId:
+          description: |
+            String uniquely identifying a NF instance. The format of the NF Instance ID shall be a Universally Unique Identifier (UUID) version 4, as described in IETF RFC 4122.
+          format: uuid
+          type: string
+        locationQoS:
+          $ref: "#/components/schemas/LocationQoS"
+        supportedGADShapes:
+          items:
+            $ref: "#/components/schemas/SupportedGADShapes"
+          minItems: 1
+          type: array
+        supi:
+          description: |
+            String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause
+            2.2A of 3GPP TS 23.003. It shall be formatted as follows
+             - for an IMSI "imsi-<imsi>", where <imsi> shall be formatted according to clause 2.2
+               of 3GPP TS 23.003 that describes an IMSI.
+             - for a network specific identifier "nai-<nai>, where <nai> shall be formatted
+               according to clause 28.7.2 of 3GPP TS 23.003 that describes an NAI.
+             - for a GCI "gci-<gci>", where <gci> shall be formatted according to clause 28.15.2
+               of 3GPP TS 23.003.
+             - for a GLI "gli-<gli>", where <gli> shall be formatted according to clause 28.16.2 of
+               3GPP TS 23.003.To enable that the value is used as part of an URI, the string shall
+               only contain characters allowed according to the "lower-with-hyphen" naming convention
+               defined in 3GPP TS 29.501.
+          pattern: "^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+          type: string
+        gpsi:
+          description: |
+            String identifying a Gpsi shall contain either an External Id or an MSISDN. It shall be formatted as follows -External Identifier= "extid-'extid', where 'extid' shall be formatted according to clause 19.7.2 of 3GPP TS 23.003 that describes an External Identifier.
+          pattern: "^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+          type: string
+        ldrType:
+          $ref: "#/components/schemas/LdrType"
+        hgmlcCallBackURI:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        ldrReference:
+          description: LDR Reference.
+          maxLength: 510
+          minLength: 2
+          type: string
+        periodicEventInfo:
+          $ref: "#/components/schemas/PeriodicEventInfo"
+        areaEventInfo:
+          $ref: "#/components/schemas/AreaEventInfo"
+        motionEventInfo:
+          $ref: "#/components/schemas/MotionEventInfo"
+        eventReportMessage:
+          $ref: "#/components/schemas/EventReportMessage"
+        eventReportingStatus:
+          $ref: "#/components/schemas/EventReportingStatus"
+        ueLocationInfo:
+          $ref: "#/components/schemas/UELocationInfo"
+        cIoT5GSOptimisation:
+          default: false
+          type: boolean
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        guami:
+          $ref: "#/components/schemas/Guami"
+        supportedFeatures:
+          description: |
+            A string used to indicate the features supported by an API that is used as defined in clause 6.6 in 3GPP TS 29.500. The string shall contain a bitmask indicating supported features in hexadecimal representation Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent the support of 4 features as described in table 5.2.2-3. The most significant character representing the highest-numbered features shall  appear first in the string, and the character representing features 1 to 4 shall appear last  in the string. The list of features and their numbering (starting with 1) are defined  separately for each API. If the string contains a lower number of characters than there are  defined features for an API, all features that would be represented by characters that are not  present in the string are not supported.
+          pattern: "^[A-Fa-f0-9]*$"
+          type: string
+        uePositioningCap:
+          description: Positioning capabilities supported by the UE. A string encoding the "ProvideCapabilities-r9-IEs" IE as specified in clause 6.3 of 3GPP TS 37.355 (start from octet 1).
+          format: byte
+          type: string
+        scheduledLocTime:
+          description: string with format 'date-time' as defined in OpenAPI.
+          format: date-time
+          type: string
+        indoorOutdoorInd:
+          $ref: "#/components/schemas/IndoorOutdoorInd"
+        losNlosMeasureInd:
+          $ref: "#/components/schemas/LosNlosMeasureInd"
+        upCumEvtRptCriteria:
+          $ref: "#/components/schemas/UpCumEvtRptCriteria"
+      required:
+        - amfId
+        - eventReportMessage
+        - hgmlcCallBackURI
+        - ldrReference
+        - ldrType
+      type: object
+    EventReportMessage:
+      description: Indicates an event report message.
+      example:
+        eventClass: SUPPLEMENTARY_SERVICES
+        eventContent:
+          contentId: contentId
+      properties:
+        eventClass:
+          $ref: "#/components/schemas/EventClass"
+        eventContent:
+          $ref: "#/components/schemas/RefToBinaryData"
+      required:
+        - eventClass
+        - eventContent
+      type: object
+    EventReportingStatus:
+      description: Indicates the status of event reporting.
+      example:
+        eventReportCounter: null
+        eventReportDuration: null
+      properties:
+        eventReportCounter:
+          $ref: "#/components/schemas/EventReportCounter"
+        eventReportDuration:
+          $ref: "#/components/schemas/EventReportDuration"
+      type: object
+    UELocationInfo:
+      description: Indicates location information of a UE.
+      example:
+        locationEstimate:
+          shape: POINT
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        ageOfLocationEstimate: null
+        timestampOfLocationEstimate: null
+        velocityEstimate:
+          hSpeed: null
+          bearing: null
+        ageOfVelocityEstimate: null
+        timestampOfVelocityEstimate: null
+      properties:
+        locationEstimate:
+          $ref: "#/components/schemas/GeographicArea"
+        ageOfLocationEstimate:
+          $ref: "#/components/schemas/AgeOfLocationEstimate"
+        timestampOfLocationEstimate:
+          $ref: "#/components/schemas/DateTime"
+        velocityEstimate:
+          $ref: "#/components/schemas/VelocityEstimate"
+        ageOfVelocityEstimate:
+          $ref: "#/components/schemas/AgeOfLocationEstimate"
+        timestampOfVelocityEstimate:
+          $ref: "#/components/schemas/DateTime"
+      type: object
+    EventNotifyDataExt:
+      allOf:
+        - $ref: "#/components/schemas/EventNotifyData"
+        - $ref: "#/components/schemas/AddEventNotifyDatas"
+      description: Extended Event Notify Data for UEs
+      example:
+        reportedEventType: PERIODIC_EVENT
+        supi: null
+        gpsi: null
+        hgmlcCallBackURI: null
+        ldrReference: null
+        lirReference: null
+        locationEstimate:
+          shape: POINT
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        ageOfLocationEstimate: null
+        timestampOfLocationEstimate: null
+        civicAddress:
+          country: country
+          A1: A1
+          A2: A2
+          A3: A3
+          A4: A4
+          A5: A5
+          A6: A6
+          PRD: PRD
+          POD: POD
+          STS: STS
+          HNO: HNO
+          HNS: HNS
+          LMK: LMK
+          LOC: LOC
+          NAM: NAM
+          PC: PC
+          BLD: BLD
+          UNIT: UNIT
+          FLR: FLR
+          ROOM: ROOM
+          PLC: PLC
+          PCN: PCN
+          POBOX: POBOX
+          ADDCODE: ADDCODE
+          SEAT: SEAT
+          RD: RD
+          RDSEC: RDSEC
+          RDBR: RDBR
+          RDSUBBR: RDSUBBR
+          PRM: PRM
+          POM: POM
+          usageRules: usageRules
+          method: method
+          providedBy: providedBy
+        localLocationEstimate:
+          shape: null
+          localOrigin:
+            coordinateId: coordinateId
+            point:
+              lon: -151.1701851434036
+              lat: 18.494211295267263
+          point:
+            x: null
+            "y": null
+            z: null
+          uncertaintyEllipse:
+            semiMajor: null
+            semiMinor: null
+            orientationMajor: null
+          confidence: null
+        positioningDataList:
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+        gnssPositioningDataList:
+          - mode: null
+            gnss: GPS
+            usage: null
+          - mode: null
+            gnss: GPS
+            usage: null
+        servingLMFidentification: null
+        terminationCause: TERMINATION_BY_UE
+        velocityEstimate:
+          hSpeed: null
+          bearing: null
+        altitude: null
+        achievedQos:
+          hAccuracy: null
+          vAccuracy: null
+        supportedFeatures: null
+        indoorOutdoorInd: INDOOR
+        haGnssMetrics:
+          nrOfUsedSatellites: 38
+          hdopi: 144
+          pdopi: 59
+          age: 69
+          fixType: CARRIER_PHASE_FLOAT
+        losNlosMeasureInd: LOS
+        upLocRepStatAf: 0
+        relatedApplicationlayerId: null
+        distanceDirection:
+          distance: 9.301444243932576
+          azimuthDirection: null
+          elevationDirection: null
+        "2dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          orientationAngle: null
+        "3dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          verticalUncertainty: null
+          orientationAngle: null
+        relativeVelocity: null
+        addEventNotifyDatas:
+          - reportedEventType: null
+            supi: null
+            gpsi: null
+            hgmlcCallBackURI: null
+            ldrReference: null
+            lirReference: null
+            locationEstimate: null
+            ageOfLocationEstimate: null
+            timestampOfLocationEstimate: null
+            civicAddress:
+              country: country
+              A1: A1
+              A2: A2
+              A3: A3
+              A4: A4
+              A5: A5
+              A6: A6
+              PRD: PRD
+              POD: POD
+              STS: STS
+              HNO: HNO
+              HNS: HNS
+              LMK: LMK
+              LOC: LOC
+              NAM: NAM
+              PC: PC
+              BLD: BLD
+              UNIT: UNIT
+              FLR: FLR
+              ROOM: ROOM
+              PLC: PLC
+              PCN: PCN
+              POBOX: POBOX
+              ADDCODE: ADDCODE
+              SEAT: SEAT
+              RD: RD
+              RDSEC: RDSEC
+              RDBR: RDBR
+              RDSUBBR: RDSUBBR
+              PRM: PRM
+              POM: POM
+              usageRules: usageRules
+              method: method
+              providedBy: providedBy
+            localLocationEstimate: null
+            positioningDataList:
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+            gnssPositioningDataList:
+              - mode: null
+                gnss: GPS
+                usage: null
+              - mode: null
+                gnss: GPS
+                usage: null
+            servingLMFidentification: null
+            terminationCause: null
+            velocityEstimate: null
+            altitude: null
+            achievedQos:
+              hAccuracy: null
+              vAccuracy: null
+            supportedFeatures: null
+            indoorOutdoorInd: null
+            haGnssMetrics:
+              nrOfUsedSatellites: 38
+              hdopi: 144
+              pdopi: 59
+              age: 69
+              fixType: CARRIER_PHASE_FLOAT
+            losNlosMeasureInd: null
+            upLocRepStatAf: 6
+            relatedApplicationlayerId: null
+            distanceDirection:
+              distance: 9.301444243932576
+              azimuthDirection: null
+              elevationDirection: null
+            "2dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              orientationAngle: null
+            "3dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              verticalUncertainty: null
+              orientationAngle: null
+            relativeVelocity: null
+          - reportedEventType: null
+            supi: null
+            gpsi: null
+            hgmlcCallBackURI: null
+            ldrReference: null
+            lirReference: null
+            locationEstimate: null
+            ageOfLocationEstimate: null
+            timestampOfLocationEstimate: null
+            civicAddress:
+              country: country
+              A1: A1
+              A2: A2
+              A3: A3
+              A4: A4
+              A5: A5
+              A6: A6
+              PRD: PRD
+              POD: POD
+              STS: STS
+              HNO: HNO
+              HNS: HNS
+              LMK: LMK
+              LOC: LOC
+              NAM: NAM
+              PC: PC
+              BLD: BLD
+              UNIT: UNIT
+              FLR: FLR
+              ROOM: ROOM
+              PLC: PLC
+              PCN: PCN
+              POBOX: POBOX
+              ADDCODE: ADDCODE
+              SEAT: SEAT
+              RD: RD
+              RDSEC: RDSEC
+              RDBR: RDBR
+              RDSUBBR: RDSUBBR
+              PRM: PRM
+              POM: POM
+              usageRules: usageRules
+              method: method
+              providedBy: providedBy
+            localLocationEstimate: null
+            positioningDataList:
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+              - method: CELLID
+                mode: UE_BASED
+                usage: UNSUCCESS
+                methodCode: 18
+            gnssPositioningDataList:
+              - mode: null
+                gnss: GPS
+                usage: null
+              - mode: null
+                gnss: GPS
+                usage: null
+            servingLMFidentification: null
+            terminationCause: null
+            velocityEstimate: null
+            altitude: null
+            achievedQos:
+              hAccuracy: null
+              vAccuracy: null
+            supportedFeatures: null
+            indoorOutdoorInd: null
+            haGnssMetrics:
+              nrOfUsedSatellites: 38
+              hdopi: 144
+              pdopi: 59
+              age: 69
+              fixType: CARRIER_PHASE_FLOAT
+            losNlosMeasureInd: null
+            upLocRepStatAf: 6
+            relatedApplicationlayerId: null
+            distanceDirection:
+              distance: 9.301444243932576
+              azimuthDirection: null
+              elevationDirection: null
+            "2dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              orientationAngle: null
+            "3dRelativeLocation":
+              semiMinor: null
+              semiMajor: null
+              verticalUncertainty: null
+              orientationAngle: null
+            relativeVelocity: null
+    EventNotifyData:
+      description: Information within Event Notify Request.
+      example:
+        reportedEventType: null
+        supi: null
+        gpsi: null
+        hgmlcCallBackURI: null
+        ldrReference: null
+        lirReference: null
+        locationEstimate: null
+        ageOfLocationEstimate: null
+        timestampOfLocationEstimate: null
+        civicAddress:
+          country: country
+          A1: A1
+          A2: A2
+          A3: A3
+          A4: A4
+          A5: A5
+          A6: A6
+          PRD: PRD
+          POD: POD
+          STS: STS
+          HNO: HNO
+          HNS: HNS
+          LMK: LMK
+          LOC: LOC
+          NAM: NAM
+          PC: PC
+          BLD: BLD
+          UNIT: UNIT
+          FLR: FLR
+          ROOM: ROOM
+          PLC: PLC
+          PCN: PCN
+          POBOX: POBOX
+          ADDCODE: ADDCODE
+          SEAT: SEAT
+          RD: RD
+          RDSEC: RDSEC
+          RDBR: RDBR
+          RDSUBBR: RDSUBBR
+          PRM: PRM
+          POM: POM
+          usageRules: usageRules
+          method: method
+          providedBy: providedBy
+        localLocationEstimate: null
+        positioningDataList:
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+          - method: CELLID
+            mode: UE_BASED
+            usage: UNSUCCESS
+            methodCode: 18
+        gnssPositioningDataList:
+          - mode: null
+            gnss: GPS
+            usage: null
+          - mode: null
+            gnss: GPS
+            usage: null
+        servingLMFidentification: null
+        terminationCause: null
+        velocityEstimate: null
+        altitude: null
+        achievedQos:
+          hAccuracy: null
+          vAccuracy: null
+        supportedFeatures: null
+        indoorOutdoorInd: null
+        haGnssMetrics:
+          nrOfUsedSatellites: 38
+          hdopi: 144
+          pdopi: 59
+          age: 69
+          fixType: CARRIER_PHASE_FLOAT
+        losNlosMeasureInd: null
+        upLocRepStatAf: 6
+        relatedApplicationlayerId: null
+        distanceDirection:
+          distance: 9.301444243932576
+          azimuthDirection: null
+          elevationDirection: null
+        "2dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          orientationAngle: null
+        "3dRelativeLocation":
+          semiMinor: null
+          semiMajor: null
+          verticalUncertainty: null
+          orientationAngle: null
+        relativeVelocity: null
+      properties:
+        reportedEventType:
+          $ref: "#/components/schemas/ReportedEventType"
+        supi:
+          $ref: "#/components/schemas/Supi"
+        gpsi:
+          $ref: "#/components/schemas/Gpsi"
+        hgmlcCallBackURI:
+          $ref: "#/components/schemas/Uri"
+        ldrReference:
+          $ref: "#/components/schemas/LdrReference"
+        lirReference:
+          $ref: "#/components/schemas/LirReference"
+        locationEstimate:
+          $ref: "#/components/schemas/GeographicArea"
+        ageOfLocationEstimate:
+          $ref: "#/components/schemas/AgeOfLocationEstimate"
+        timestampOfLocationEstimate:
+          $ref: "#/components/schemas/DateTime"
+        civicAddress:
+          $ref: "#/components/schemas/CivicAddress"
+        localLocationEstimate:
+          $ref: "#/components/schemas/LocalArea"
+        positioningDataList:
+          items:
+            $ref: "#/components/schemas/PositioningMethodAndUsage"
+          minItems: 1
+          type: array
+        gnssPositioningDataList:
+          items:
+            $ref: "#/components/schemas/GnssPositioningMethodAndUsage"
+          minItems: 1
+          type: array
+        servingLMFidentification:
+          $ref: "#/components/schemas/LMFIdentification"
+        terminationCause:
+          $ref: "#/components/schemas/TerminationCauseLmf"
+        velocityEstimate:
+          $ref: "#/components/schemas/VelocityEstimate"
+        altitude:
+          $ref: "#/components/schemas/Altitude"
+        achievedQos:
+          $ref: "#/components/schemas/MinorLocationQoS"
+        supportedFeatures:
+          $ref: "#/components/schemas/SupportedFeatures"
+        indoorOutdoorInd:
+          $ref: "#/components/schemas/IndoorOutdoorInd"
+        haGnssMetrics:
+          $ref: "#/components/schemas/HighAccuracyGnssMetrics"
+        losNlosMeasureInd:
+          $ref: "#/components/schemas/LosNlosMeasureInd"
+        upLocRepStatAf:
+          type: integer
+        relatedApplicationlayerId:
+          $ref: "#/components/schemas/ApplicationlayerId"
+        distanceDirection:
+          $ref: "#/components/schemas/RangeDirection"
+        "2dRelativeLocation":
+          $ref: "#/components/schemas/twoDRelativeLocation"
+        "3dRelativeLocation":
+          $ref: "#/components/schemas/threeDRelativeLocation"
+        relativeVelocity:
+          $ref: "#/components/schemas/VelocityEstimate"
+      required:
+        - ldrReference
+        - reportedEventType
+      type: object
+    UeConnectivityState:
+      description: Indicates the connectivity state of a UE.
+      example:
+        accessType: 3GPP_ACCESS
+        connectivitystate: IDLE
+      properties:
+        accessType:
+          $ref: "#/components/schemas/AccessType"
+        connectivitystate:
+          $ref: "#/components/schemas/CmState"
+      required:
+        - accessType
+      type: object
+    MinorLocationQoS:
+      description: Contain Minor Location QoS.
+      example:
+        hAccuracy: null
+        vAccuracy: null
+      properties:
+        hAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+        vAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+      type: object
+    MbsrInfo:
+      description: MBSR Information
+      example:
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+      properties:
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+      type: object
+    LocMeasurementReq:
+      description: Location Measurement Request.
+      example:
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+        preCalcuLocEstimate:
+          shape: POINT
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        timestampOfPreCalcuLocEstimate: 2000-01-23T04:56:07.000+00:00
+        timeWindows:
+          - null
+          - null
+      properties:
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+        preCalcuLocEstimate:
+          $ref: "#/components/schemas/GeographicArea"
+        timestampOfPreCalcuLocEstimate:
+          description: string with format 'date-time' as defined in OpenAPI.
+          format: date-time
+          type: string
+        timeWindows:
+          items:
+            $ref: "#/components/schemas/TimeWindow"
+          minItems: 1
+          type: array
+      type: object
+    LocMeasurementResp:
+      description: Location Measurement Response.
+      example:
+        locMeasurements:
+          rstd: 0
+        locationEstimate:
+          shape: POINT
+          point:
+            lon: -151.1701851434036
+            lat: 18.494211295267263
+        ageOfLocationEstimate: 19750
+        timestampOfLocationEstimate: 2000-01-23T04:56:07.000+00:00
+        velocityEstimate:
+          hSpeed: null
+          bearing: null
+        localLocationEstimate:
+          shape: null
+          localOrigin:
+            coordinateId: coordinateId
+            point:
+              lon: -151.1701851434036
+              lat: 18.494211295267263
+          point:
+            x: null
+            "y": null
+            z: null
+          uncertaintyEllipse:
+            semiMajor: null
+            semiMinor: null
+            orientationMajor: null
+          confidence: null
+      properties:
+        locMeasurements:
+          $ref: "#/components/schemas/LocMeasurements"
+        locationEstimate:
+          $ref: "#/components/schemas/GeographicArea"
+        ageOfLocationEstimate:
+          description: Indicates value of the age of the location estimate.
+          maximum: 32767
+          minimum: 0
+          type: integer
+        timestampOfLocationEstimate:
+          description: string with format 'date-time' as defined in OpenAPI.
+          format: date-time
+          type: string
+        velocityEstimate:
+          $ref: "#/components/schemas/VelocityEstimate"
+        localLocationEstimate:
+          $ref: "#/components/schemas/LocalArea"
+      required:
+        - locMeasurements
+        - locationEstimate
+      type: object
+    LocMeasurements:
+      description: PRU Location Measurements.
+      example:
+        rstd: 0
+      properties:
+        rstd:
+          type: integer
+      type: object
+    HighAccuracyGnssMetrics:
+      description: High Accuracy GNSS Positioning Metrics.
+      example:
+        nrOfUsedSatellites: 38
+        hdopi: 144
+        pdopi: 59
+        age: 69
+        fixType: CARRIER_PHASE_FLOAT
+      properties:
+        nrOfUsedSatellites:
+          maximum: 64
+          minimum: 0
+          type: integer
+        hdopi:
+          maximum: 256
+          minimum: 1
+          type: integer
+        pdopi:
+          maximum: 256
+          minimum: 1
+          type: integer
+        age:
+          maximum: 99
+          minimum: 0
+          type: integer
+        fixType:
+          $ref: "#/components/schemas/FixType"
+      type: object
+    UpNotifyData:
+      description: UP Subscription
+      example:
+        notifCorrelationId: notifCorrelationId
+        upConnectionStatus: ESTABLISHED
+        targetLMFId: targetLMFId
+      properties:
+        notifCorrelationId:
+          description: LCS Correlation ID.
+          maxLength: 255
+          minLength: 1
+          type: string
+        upConnectionStatus:
+          $ref: "#/components/schemas/UpConnectionStatus"
+        targetLMFId:
+          description: LMF identification.
+          type: string
+      required:
+        - notifCorrelationId
+        - upConnectionStatus
+      type: object
+    UpSubscription:
+      description: UP Subscription
+      example:
+        upNotifyCallBackUri: upNotifyCallBackUri
+        notifCorrelationId: notifCorrelationId
+        supi: supi
+        gpsi: gpsi
+      properties:
+        upNotifyCallBackUri:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        notifCorrelationId:
+          description: LCS Correlation ID.
+          maxLength: 255
+          minLength: 1
+          type: string
+        supi:
+          description: |
+            String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause
+            2.2A of 3GPP TS 23.003. It shall be formatted as follows
+             - for an IMSI "imsi-<imsi>", where <imsi> shall be formatted according to clause 2.2
+               of 3GPP TS 23.003 that describes an IMSI.
+             - for a network specific identifier "nai-<nai>, where <nai> shall be formatted
+               according to clause 28.7.2 of 3GPP TS 23.003 that describes an NAI.
+             - for a GCI "gci-<gci>", where <gci> shall be formatted according to clause 28.15.2
+               of 3GPP TS 23.003.
+             - for a GLI "gli-<gli>", where <gli> shall be formatted according to clause 28.16.2 of
+               3GPP TS 23.003.To enable that the value is used as part of an URI, the string shall
+               only contain characters allowed according to the "lower-with-hyphen" naming convention
+               defined in 3GPP TS 29.501.
+          pattern: "^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+          type: string
+        gpsi:
+          description: |
+            String identifying a Gpsi shall contain either an External Id or an MSISDN. It shall be formatted as follows -External Identifier= "extid-'extid', where 'extid' shall be formatted according to clause 19.7.2 of 3GPP TS 23.003 that describes an External Identifier.
+          pattern: "^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+          type: string
+      required:
+        - notifCorrelationId
+        - supi
+        - upNotifyCallBackUri
+      type: object
+    RelatedUE:
+      description: Related UE Information
+      example:
+        applicationlayerId: null
+        relatedUEType: LOCATED_UE
+      properties:
+        applicationlayerId:
+          $ref: "#/components/schemas/ApplicationlayerId"
+        relatedUEType:
+          $ref: "#/components/schemas/RelatedUEType"
+      required:
+        - applicationlayerId
+        - relatedUEType
+      type: object
+    UpConfig:
+      description: UP Config
+      example:
+        upNotifyCallBackUri: upNotifyCallBackUri
+        notifCorrelationId: notifCorrelationId
+        supi: supi
+        gpsi: gpsi
+        amfReallocationInd: false
+        lcsUpConnectionInd: TERMINATION
+        targetLMFId: targetLMFId
+      properties:
+        upNotifyCallBackUri:
+          description: String providing an URI formatted according to RFC 3986.
+          type: string
+        notifCorrelationId:
+          description: LCS Correlation ID.
+          maxLength: 255
+          minLength: 1
+          type: string
+        supi:
+          description: |
+            String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+            a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause
+            2.2A of 3GPP TS 23.003. It shall be formatted as follows
+             - for an IMSI "imsi-<imsi>", where <imsi> shall be formatted according to clause 2.2
+               of 3GPP TS 23.003 that describes an IMSI.
+             - for a network specific identifier "nai-<nai>, where <nai> shall be formatted
+               according to clause 28.7.2 of 3GPP TS 23.003 that describes an NAI.
+             - for a GCI "gci-<gci>", where <gci> shall be formatted according to clause 28.15.2
+               of 3GPP TS 23.003.
+             - for a GLI "gli-<gli>", where <gli> shall be formatted according to clause 28.16.2 of
+               3GPP TS 23.003.To enable that the value is used as part of an URI, the string shall
+               only contain characters allowed according to the "lower-with-hyphen" naming convention
+               defined in 3GPP TS 29.501.
+          pattern: "^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+          type: string
+        gpsi:
+          description: |
+            String identifying a Gpsi shall contain either an External Id or an MSISDN. It shall be formatted as follows -External Identifier= "extid-'extid', where 'extid' shall be formatted according to clause 19.7.2 of 3GPP TS 23.003 that describes an External Identifier.
+          pattern: "^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+          type: string
+        amfReallocationInd:
+          default: false
+          type: boolean
+        lcsUpConnectionInd:
+          $ref: "#/components/schemas/LcsUpConnectionInd"
+        targetLMFId:
+          description: LMF identification.
+          type: string
+      required:
+        - notifCorrelationId
+        - upNotifyCallBackUri
+      type: object
+    RangeDirection:
+      description: Represents a distance and direction from a point A to a point B.
+      example:
+        distance: 9.301444243932576
+        azimuthDirection: null
+        elevationDirection: null
+      properties:
+        distance:
+          type: number
+        azimuthDirection:
+          $ref: "#/components/schemas/Angle"
+        elevationDirection:
+          $ref: "#/components/schemas/Angle"
+      type: object
+    twoDRelativeLocation:
+      description: Represents a relative 2D location with uncertainty ellipse.
+      example:
+        semiMinor: null
+        semiMajor: null
+        orientationAngle: null
+      properties:
+        semiMinor:
+          $ref: "#/components/schemas/Uncertainty"
+        semiMajor:
+          $ref: "#/components/schemas/Uncertainty"
+        orientationAngle:
+          $ref: "#/components/schemas/Angle"
+      type: object
+    threeDRelativeLocation:
+      description: Represents a relative 3D location with uncertainty ellipsoid.
+      example:
+        semiMinor: null
+        semiMajor: null
+        verticalUncertainty: null
+        orientationAngle: null
+      properties:
+        semiMinor:
+          $ref: "#/components/schemas/Uncertainty"
+        semiMajor:
+          $ref: "#/components/schemas/Uncertainty"
+        verticalUncertainty:
+          $ref: "#/components/schemas/Uncertainty"
+        orientationAngle:
+          $ref: "#/components/schemas/Angle"
+      type: object
+    AddLocationDatas:
+      properties:
+        addLocationDatas:
+          items:
+            $ref: "#/components/schemas/LocationData"
+          minItems: 1
+          type: array
+      type: object
+    AddEventNotifyDatas:
+      properties:
+        addEventNotifyDatas:
+          items:
+            $ref: "#/components/schemas/EventNotifyData"
+          minItems: 1
+          type: array
+      type: object
+    MappedLocationQoSEps:
+      description: Mapped Location QoS for EPS.
+      example:
+        hAccuracy: null
+        vAccuracy: null
+      properties:
+        hAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+        vAccuracy:
+          $ref: "#/components/schemas/Accuracy"
+      required:
+        - hAccuracy
+      type: object
+    AdditionalUeInfo:
+      description: MBSR UE Information
+      example:
+        ncgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          nrCellId: null
+          nid: null
+        ecgi:
+          plmnId:
+            mcc: null
+            mnc: null
+          eutraCellId: null
+          nid: null
+      properties:
+        ncgi:
+          $ref: "#/components/schemas/Ncgi"
+        ecgi:
+          $ref: "#/components/schemas/Ecgi"
+      type: object
+    Altitude:
+      description: Indicates value of altitude.
+      format: double
+      maximum: 32767
+      minimum: -32767
+      type: number
+    Angle:
+      description: Indicates value of angle.
+      maximum: 360
+      minimum: 0
+      type: integer
+    Uncertainty:
+      description: Indicates value of uncertainty.
+      format: float
+      minimum: 0
+      type: number
+    Orientation:
+      description: Indicates value of orientation angle.
+      maximum: 180
+      minimum: 0
+      type: integer
+    Confidence:
+      description: Indicates value of confidence.
+      maximum: 100
+      minimum: 0
+      type: integer
+    Accuracy:
+      description: Indicates value of accuracy.
+      format: float
+      minimum: 0
+      type: number
+    InnerRadius:
+      description: Indicates value of the inner radius.
+      format: int32
+      maximum: 327675
+      minimum: 0
+      type: integer
+    CorrelationID:
+      description: LCS Correlation ID.
+      maxLength: 255
+      minLength: 1
+      type: string
+    AgeOfLocationEstimate:
+      description: Indicates value of the age of the location estimate.
+      maximum: 32767
+      minimum: 0
+      type: integer
+    HorizontalSpeed:
+      description: Indicates value of horizontal speed.
+      format: float
+      maximum: 2047
+      minimum: 0
+      type: number
+    VerticalSpeed:
+      description: Indicates value of vertical speed.
+      format: float
+      maximum: 255
+      minimum: 0
+      type: number
+    SpeedUncertainty:
+      description: Indicates value of speed uncertainty.
+      format: float
+      maximum: 255
+      minimum: 0
+      type: number
+    BarometricPressure:
+      description: Specifies the measured uncompensated atmospheric pressure.
+      maximum: 115000
+      minimum: 30000
+      type: integer
+    LcsServiceType:
+      description: LCS service type.
+      maximum: 127
+      minimum: 0
+      type: integer
+    LdrReference:
+      description: LDR Reference.
+      maxLength: 510
+      minLength: 2
+      type: string
+    LirReference:
+      description: LIR Reference.
+      maxLength: 510
+      minLength: 2
+      type: string
+    ReportingAmount:
+      description: Number of required periodic event reports.
+      maximum: 8639999
+      minimum: 1
+      type: integer
+    ReportingInterval:
+      description: Event reporting periodic interval in seconds.
+      maximum: 8639999
+      minimum: 1
+      type: integer
+    ReportingIntervalMs:
+      description: Event reporting periodic interval in milliseconds.
+      maximum: 999
+      minimum: 1
+      type: integer
+    MinimumInterval:
+      description: Minimum interval between event reports.
+      maximum: 32767
+      minimum: 1
+      type: integer
+    MaximumInterval:
+      description: Maximum interval between event reports.
+      maximum: 86400
+      minimum: 1
+      type: integer
+    SamplingInterval:
+      description: Maximum time interval between consecutive evaluations by a UE of a trigger event.
+      maximum: 3600
+      minimum: 1
+      type: integer
+    ReportingDuration:
+      description: Maximum duration of event reporting.
+      maximum: 8640000
+      minimum: 1
+      type: integer
+    LinearDistance:
+      description: Minimum straight line distance moved by a UE to trigger a motion event report.
+      maximum: 10000
+      minimum: 1
+      type: integer
+    LMFIdentification:
+      description: LMF identification.
+      type: string
+    EventReportCounter:
+      description: Number of event reports received from the target UE.
+      maximum: 8640000
+      minimum: 1
+      type: integer
+    EventReportDuration:
+      description: Duration of event reporting.
+      maximum: 8640000
+      minimum: 1
+      type: integer
+    UePositioningCapabilities:
+      description: Positioning capabilities supported by the UE. A string encoding the "ProvideCapabilities-r9-IEs" IE as specified in clause 6.3 of 3GPP TS 37.355 (start from octet 1).
+      format: byte
+      type: string
+    TimeWindow:
+      description: Time Window.
+      format: byte
+      type: string
+    RangingSlCapability:
+      description: Ranging/Sidelink Positioning Positioning capabilities supported by the UE.
+      format: byte
+      type: string
+    ExternalClientType:
+      description: Indicates types of External Clients.
+      enum:
+        - EMERGENCY_SERVICES
+        - VALUE_ADDED_SERVICES
+        - PLMN_OPERATOR_SERVICES
+        - LAWFUL_INTERCEPT_SERVICES
+        - PLMN_OPERATOR_BROADCAST_SERVICES
+        - PLMN_OPERATOR_OM
+        - PLMN_OPERATOR_ANONYMOUS_STATISTICS
+        - PLMN_OPERATOR_TARGET_MS_SERVICE_SUPPORT
+        - SL_POS
+      type: string
+    SupportedGADShapes:
+      description: Indicates supported GAD shapes.
+      enum:
+        - POINT
+        - POINT_UNCERTAINTY_CIRCLE
+        - POINT_UNCERTAINTY_ELLIPSE
+        - POLYGON
+        - POINT_ALTITUDE
+        - POINT_ALTITUDE_UNCERTAINTY
+        - ELLIPSOID_ARC
+        - LOCAL_2D_POINT_UNCERTAINTY_ELLIPSE
+        - LOCAL_3D_POINT_UNCERTAINTY_ELLIPSOID
+        - DISTANCE_DIRECTION
+        - RELATIVE_2D_LOCATION_UNCERTAINTY_ELLIPSE
+        - RELATIVE_3D_LOCATION_UNCERTAINTY_ELLIPSOID
+      type: string
+    ResponseTime:
+      description: Indicates acceptable delay of location request.
+      enum:
+        - LOW_DELAY
+        - DELAY_TOLERANT
+        - NO_DELAY
+      type: string
+    PositioningMethod:
+      description: Indicates supported positioning methods.
+      enum:
+        - CELLID
+        - ECID
+        - OTDOA
+        - BAROMETRIC_PRESSURE
+        - WLAN
+        - BLUETOOTH
+        - MBS
+        - MOTION_SENSOR
+        - DL_TDOA
+        - DL_AOD
+        - MULTI-RTT
+        - NR_ECID
+        - UL_TDOA
+        - UL_AOA
+        - NETWORK_SPECIFIC
+        - SL_TDOA
+        - SL_TOA
+        - SL_AoA
+        - SL_RT
+      type: string
+    PositioningMode:
+      description: Indicates supported modes used for positioning method.
+      enum:
+        - UE_BASED
+        - UE_ASSISTED
+        - CONVENTIONAL
+      type: string
+    GnssId:
+      description: Global Navigation Satellite System (GNSS) ID.
+      enum:
+        - GPS
+        - GALILEO
+        - SBAS
+        - MODERNIZED_GPS
+        - QZSS
+        - GLONASS
+        - BDS
+        - NAVIC
+      type: string
+    Usage:
+      description: Indicates usage made of the location measurement.
+      enum:
+        - UNSUCCESS
+        - SUCCESS_RESULTS_NOT_USED
+        - SUCCESS_RESULTS_USED_TO_VERIFY_LOCATION
+        - SUCCESS_RESULTS_USED_TO_GENERATE_LOCATION
+        - SUCCESS_METHOD_NOT_DETERMINED
+      type: string
+    LcsPriority:
+      description: Indicates priority of the LCS client.
+      enum:
+        - HIGHEST_PRIORITY
+        - NORMAL_PRIORITY
+      type: string
+    VelocityRequested:
+      description: Indicates velocity requirement.
+      enum:
+        - VELOCITY_IS_NOT_REQUESTED
+        - VELOCITY_IS_REQUESTED
+      type: string
+    AccuracyFulfilmentIndicator:
+      description: Indicates fulfilment of requested accuracy.
+      enum:
+        - REQUESTED_ACCURACY_FULFILLED
+        - REQUESTED_ACCURACY_NOT_FULFILLED
+      type: string
+    VerticalDirection:
+      description: Indicates direction of vertical speed.
+      enum:
+        - UPWARD
+        - DOWNWARD
+      type: string
+    LdrType:
+      description: Indicates LDR types.
+      enum:
+        - UE_AVAILABLE
+        - PERIODIC
+        - ENTERING_INTO_AREA
+        - LEAVING_FROM_AREA
+        - BEING_INSIDE_AREA
+        - MOTION
+      type: string
+    ReportingAreaType:
+      description: Indicates type of event reporting area.
+      enum:
+        - EPS_TRACKING_AREA_IDENTITY
+        - E-UTRAN_CELL_GLOBAL_IDENTIFICATION
+        - 5GS_TRACKING_AREA_IDENTITY
+        - NR_CELL_GLOBAL_IDENTITY
+      type: string
+    OccurrenceInfo:
+      description: Specifies occurrence of event reporting.
+      enum:
+        - ONE_TIME_EVENT
+        - MULTIPLE_TIME_EVENT
+      type: string
+    ReportingAccessType:
+      description: Specifies access types of event reporting.
+      enum:
+        - NR
+        - EUTRA_CONNECTED_TO_5GC
+        - NON_3GPP_CONNECTED_TO_5GC
+        - NR_LEO
+        - NR_MEO
+        - NR_GEO
+        - NR_OTHER_SAT
+        - EUTRA_CONNECTED_TO_EPC
+      type: string
+    EventClass:
+      description: Specifies event classes.
+      enum:
+        - SUPPLEMENTARY_SERVICES
+      type: string
+    ReportedEventType:
+      description: Specifies type of event reporting.
+      enum:
+        - PERIODIC_EVENT
+        - ENTERING_AREA_EVENT
+        - LEAVING_AREA_EVENT
+        - BEING_INSIDE_AREA_EVENT
+        - MOTION_EVENT
+        - MAXIMUM_INTERVAL_EXPIRATION_EVENT
+        - LOCATION_CANCELLATION_EVENT
+        - INTERMEDIATE_EVENT
+        - DIRECT_REPORT_EVENT
+        - CUMULATIVE_EVENT_REPORT
+      type: string
+    TerminationCauseLmf:
+      description: Specifies causes of event reporting termination.
+      enum:
+        - TERMINATION_BY_UE
+        - TERMINATION_BY_NETWORK
+        - NORMAL_TERMINATION
+      type: string
+    LcsQosClass:
+      description: Specifies LCS QoS class.
+      enum:
+        - BEST_EFFORT
+        - ASSURED
+        - MULTIPLE_QOS
+      type: string
+    UeLocationServiceInd:
+      description: Specifies location service types requested by UE.
+      enum:
+        - LOCATION_ESTIMATE
+        - LOCATION_ASSISTANCE_DATA
+      type: string
+    IndoorOutdoorInd:
+      description: Specifies UE location indoor or outdoor.
+      enum:
+        - INDOOR
+        - OUTDOOR
+      type: string
+    FixType:
+      description: Specifies the positioning fix type.
+      enum:
+        - CARRIER_PHASE_FLOAT
+        - CARRIER_PHASE_FIX
+      type: string
+    LosNlosMeasureInd:
+      description: Specifies LOS measurement or NLOS measurement.
+      enum:
+        - LOS
+        - NLOS
+      type: string
+    UpConnectionStatus:
+      description: UP Connection Status.
+      enum:
+        - ESTABLISHED
+        - RELEASED
+        - MOVE
+      type: string
+    RangingSlResult:
+      description: Specifies the type of result requested for ranging and sidelink positioning.
+      enum:
+        - ABSOLUTE_LOCATION
+        - RELATIVE_LOCATION
+        - RANGING_DIRECTION
+        - RANGING
+        - DIRECTION
+        - VELOCITY
+        - RELATIVE_VELOCITY
+      type: string
+    RelatedUEType:
+      description: Specifies the different roles of UE for ranging and sidelink positioning service.
+      enum:
+        - LOCATED_UE
+        - REFERENCE_UE
+      type: string
+    LcsUpConnectionInd:
+      description: LCS UP Connection Indication.
+      enum:
+        - TERMINATION
+        - SETUP
+      type: string
+    UeUpPositioningCapabilities:
+      description: User plane positioning capabilities supported by the UE.
+      enum:
+        - LCS-UPP
+        - SUPL
+      type: string
+    RedirectResponse:
+      description: |
+        The response shall include a Location header field containing a different URI (pointing to a different URI of an other service instance), or the same URI if a request is redirected to the same target resource via a different SCP.
+      example:
+        cause: cause
+        targetScp: null
+        targetSepp: null
+      properties:
+        cause:
+          type: string
+        targetScp:
+          $ref: "#/components/schemas/Uri"
+        targetSepp:
+          $ref: "#/components/schemas/Uri"
+      type: object
+    Uri:
+      description: String providing an URI formatted according to RFC 3986.
+      type: string
+    ProblemDetails:
+      description: Provides additional information in an error response.
+      properties:
+        type:
+          $ref: "#/components/schemas/Uri"
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          description: A human-readable explanation specific to this occurrence of the problem.
+          type: string
+        instance:
+          $ref: "#/components/schemas/Uri"
+        cause:
+          description: |
+            A machine-readable application error cause specific to this occurrence of the problem. This IE should be present and provide application-related error information, if available.
+          type: string
+        invalidParams:
+          items:
+            $ref: "#/components/schemas/InvalidParam"
+          minItems: 1
+          type: array
+        supportedFeatures:
+          $ref: "#/components/schemas/SupportedFeatures"
+        accessTokenError:
+          $ref: "#/components/schemas/AccessTokenErr"
+        accessTokenRequest:
+          $ref: "#/components/schemas/AccessTokenReq"
+        nrfId:
+          $ref: "#/components/schemas/Fqdn"
+        supportedApiVersions:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        noProfileMatchInfo:
+          $ref: "#/components/schemas/NoProfileMatchInfo"
+      type: object
+    InvalidParam:
+      description: It contains an invalid parameter and a related description.
+      properties:
+        param:
+          description: |
+            If the invalid parameter is an attribute in a JSON body, this IE shall contain the attribute's name and shall be encoded as a JSON Pointer. If the invalid parameter is an HTTP header, this IE shall be formatted as the concatenation of the string "header " plus the name of such header. If the invalid parameter is a query parameter, this IE shall be formatted as the concatenation of the string "query " plus the name of such query parameter. If the invalid parameter is a variable part in the path of a resource URI, this IE shall contain the name of the variable, including the symbols "{" and "}" used in OpenAPI specification as the notation to represent variable path segments.
+          type: string
+        reason:
+          description: |
+            A human-readable reason, e.g. "must be a positive integer". In cases involving failed operations in a PATCH request, the reason string should identify the operation that failed using the operation's array index to assist in correlation of the invalid parameter with the failed operation, e.g." Replacement value invalid for attribute (failed operation index= 4)"
+          type: string
+      required:
+        - param
+      type: object
+    SupportedFeatures:
+      description: |
+        A string used to indicate the features supported by an API that is used as defined in clause 6.6 in 3GPP TS 29.500. The string shall contain a bitmask indicating supported features in hexadecimal representation Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent the support of 4 features as described in table 5.2.2-3. The most significant character representing the highest-numbered features shall  appear first in the string, and the character representing features 1 to 4 shall appear last  in the string. The list of features and their numbering (starting with 1) are defined  separately for each API. If the string contains a lower number of characters than there are  defined features for an API, all features that would be represented by characters that are not  present in the string are not supported.
+      pattern: "^[A-Fa-f0-9]*$"
+      type: string
+    Fqdn:
+      description: Fully Qualified Domain Name
+      maxLength: 253
+      minLength: 4
+      pattern: "^([0-9A-Za-z]([-0-9A-Za-z]{0,61}[0-9A-Za-z])?\\.)+[A-Za-z]{2,63}\\.?$"
+      type: string
+    NfInstanceId:
+      description: |
+        String uniquely identifying a NF instance. The format of the NF Instance ID shall be a Universally Unique Identifier (UUID) version 4, as described in IETF RFC 4122.
+      format: uuid
+      type: string
+    Supi:
+      description: |
+        String identifying a Supi that shall contain either an IMSI, a network specific identifier,
+        a Global Cable Identifier (GCI) or a Global Line Identifier (GLI) as specified in clause
+        2.2A of 3GPP TS 23.003. It shall be formatted as follows
+         - for an IMSI "imsi-<imsi>", where <imsi> shall be formatted according to clause 2.2
+           of 3GPP TS 23.003 that describes an IMSI.
+         - for a network specific identifier "nai-<nai>, where <nai> shall be formatted
+           according to clause 28.7.2 of 3GPP TS 23.003 that describes an NAI.
+         - for a GCI "gci-<gci>", where <gci> shall be formatted according to clause 28.15.2
+           of 3GPP TS 23.003.
+         - for a GLI "gli-<gli>", where <gli> shall be formatted according to clause 28.16.2 of
+           3GPP TS 23.003.To enable that the value is used as part of an URI, the string shall
+           only contain characters allowed according to the "lower-with-hyphen" naming convention
+           defined in 3GPP TS 29.501.
+      pattern: "^(imsi-[0-9]{5,15}|nai-.+|gci-.+|gli-.+|.+)$"
+      type: string
+    Pei:
+      description: |
+        String representing a Permanent Equipment Identifier that may contain - an IMEI or IMEISV, as  specified in clause 6.2 of 3GPP TS 23.003; a MAC address for a 5G-RG or FN-RG via wireline  access, with an indication that this address cannot be trusted for regulatory purpose if this  address cannot be used as an Equipment Identifier of the FN-RG, as specified in clause 4.7.7  of 3GPP TS23.316. Examples are imei-012345678901234 or imeisv-0123456789012345.
+      pattern: "^(imei-[0-9]{15}|imeisv-[0-9]{16}|mac((-[0-9a-fA-F]{2}){6})(-untrusted)?|eui((-[0-9a-fA-F]{2}){8})|.+)$"
+      type: string
+    Gpsi:
+      description: |
+        String identifying a Gpsi shall contain either an External Id or an MSISDN. It shall be formatted as follows -External Identifier= "extid-'extid', where 'extid' shall be formatted according to clause 19.7.2 of 3GPP TS 23.003 that describes an External Identifier.
+      pattern: "^(msisdn-[0-9]{5,15}|extid-[^@]+@[^@]+|.+)$"
+      type: string
+    Ecgi:
+      description: "Contains the ECGI (E-UTRAN Cell Global Identity), as described in 3GPP 23.003"
+      example:
+        plmnId:
+          mcc: null
+          mnc: null
+        eutraCellId: null
+        nid: null
+      properties:
+        plmnId:
+          $ref: "#/components/schemas/PlmnId"
+        eutraCellId:
+          $ref: "#/components/schemas/EutraCellId"
+        nid:
+          $ref: "#/components/schemas/Nid"
+      required:
+        - eutraCellId
+        - plmnId
+      type: object
+    PlmnId:
+      description: |
+        When PlmnId needs to be converted to string (e.g. when used in maps as key), the string shall be composed of three digits "mcc" followed by "-" and two or three digits "mnc".
+      example:
+        mcc: null
+        mnc: null
+      properties:
+        mcc:
+          $ref: "#/components/schemas/Mcc"
+        mnc:
+          $ref: "#/components/schemas/Mnc"
+      required:
+        - mcc
+        - mnc
+      type: object
+    Mcc:
+      description: |
+        Mobile Country Code part of the PLMN, comprising 3 digits, as defined in clause 9.3.3.5 of 3GPP TS 38.413.
+      pattern: "^\\d{3}$"
+      type: string
+    Mnc:
+      description: |
+        Mobile Network Code part of the PLMN, comprising 2 or 3 digits, as defined in clause 9.3.3.5 of 3GPP TS 38.413.
+      pattern: "^\\d{2,3}$"
+      type: string
+    EutraCellId:
+      description: |
+        28-bit string identifying an E-UTRA Cell Id as specified in clause 9.3.1.9 of 3GPP TS 38.413, in hexadecimal representation. Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent 4 bits. The most significant character representing the 4 most significant bits of the Cell Id shall appear first in the string, and the character representing the 4 least significant bit of the Cell Id shall appear last in the string.
+      pattern: "^[A-Fa-f0-9]{7}$"
+      type: string
+    Nid:
+      description: |
+        This represents the Network Identifier, which together with a PLMN ID is used to identify an SNPN (see 3GPP TS 23.003 and 3GPP TS 23.501 clause 5.30.2.1).
+      pattern: "^[A-Fa-f0-9]{11}$"
+      type: string
+    Ncgi:
+      description: "Contains the NCGI (NR Cell Global Identity), as described in 3GPP 23.003"
+      example:
+        plmnId:
+          mcc: null
+          mnc: null
+        nrCellId: null
+        nid: null
+      properties:
+        plmnId:
+          $ref: "#/components/schemas/PlmnId"
+        nrCellId:
+          $ref: "#/components/schemas/NrCellId"
+        nid:
+          $ref: "#/components/schemas/Nid"
+      required:
+        - nrCellId
+        - plmnId
+      type: object
+    NrCellId:
+      description: |
+        36-bit string identifying an NR Cell Id as specified in clause 9.3.1.7 of 3GPP TS 38.413, in hexadecimal representation. Each character in the string shall take a value of "0" to "9",  "a" to "f" or "A" to "F" and shall represent 4 bits. The most significant character representing the 4 most significant bits of the Cell Id shall appear first in the string, and  the character representing the 4 least significant bit of the Cell Id shall appear last in the  string.
+      pattern: "^[A-Fa-f0-9]{9}$"
+      type: string
+    LcsBroadcastAssistanceTypesData:
+      example:
+        locationAssistanceType: null
+      properties:
+        locationAssistanceType:
+          $ref: "#/components/schemas/Binary"
+      required:
+        - locationAssistanceType
+      type: object
+    RefToBinaryData:
+      description: This parameter provides information about the referenced binary body data.
+      example:
+        contentId: contentId
+      properties:
+        contentId:
+          description: |
+            This IE shall contain the value of the Content-ID header of the referenced binary body part.
+          type: string
+      required:
+        - contentId
+      type: object
+    TnapId:
+      description: Contain the TNAP Identifier see clause5.6.2 of 3GPP TS 23.501.
+      example:
+        ssId: ssId
+        bssId: bssId
+        civicAddress: null
+      properties:
+        ssId:
+          description: |
+            This IE shall be present if the UE is accessing the 5GC via a trusted WLAN access network.When present, it shall contain the SSID of the access point to which the UE is attached, that is received over NGAP,  see IEEE Std 802.11-2012.
+          type: string
+        bssId:
+          description: |
+            When present, it shall contain the BSSID of the access point to which the UE is attached, that is received over NGAP, see IEEE Std 802.11-2012.
+          type: string
+        civicAddress:
+          $ref: "#/components/schemas/Bytes"
+      type: object
+    Bytes:
+      description: string with format 'bytes' as defined in OpenAPI
+      format: byte
+      type: string
+    TwapId:
+      description: |
+        Contain the TWAP Identifier as defined in clause 4.2.8.5.3 of 3GPP TS 23.501 or the WLAN location information as defined in clause 4.5.7.2.8 of 3GPP TS 23.402.
+      example:
+        ssId: ssId
+        bssId: bssId
+        civicAddress: null
+      properties:
+        ssId:
+          description: |
+            This IE shall contain the SSID of the access point to which the UE is attached, that is received over NGAP, see IEEE Std 802.11-2012.
+          type: string
+        bssId:
+          description: |
+            When present, it shall contain the BSSID of the access point to which the UE is attached, for trusted WLAN access, see IEEE Std 802.11-2012.
+          type: string
+        civicAddress:
+          $ref: "#/components/schemas/Bytes"
+      required:
+        - ssId
+      type: object
+    DateTime:
+      description: string with format 'date-time' as defined in OpenAPI.
+      format: date-time
+      type: string
+    DurationSec:
+      description: indicating a time in seconds.
+      type: integer
+    LpHapType:
+      description: Type of Low Power and/or High Accuracy Positioning
+      enum:
+        - LOW_POW_HIGH_ACCU_POS
+      type: string
+    ReportingInd:
+      description: |
+        Indicates whether the UE is allowed to generate and send the event report inside or outside the event report allowed(expected) area
+      enum:
+        - INSIDE_REPORTING
+        - OUTSIDE_REPORTING
+      type: string
+    IntegrityRequirements:
+      description: integrity requirements.
+      example:
+        timeToAlert: null
+        targetIntegrityRisk: null
+        alertLimit:
+          horizontalProtectionLevel: null
+          verticalProtectionLevel: null
+      properties:
+        timeToAlert:
+          $ref: "#/components/schemas/TimeToAlert"
+        targetIntegrityRisk:
+          $ref: "#/components/schemas/TargetIntegrityRisk"
+        alertLimit:
+          $ref: "#/components/schemas/AlertLimit"
+      type: object
+    TimeToAlert:
+      description: Contains the time-to-alert
+      maximum: 300
+      minimum: 1
+      type: integer
+    TargetIntegrityRisk:
+      description: Contains the target integrity risk
+      maximum: 90
+      minimum: 10
+      type: integer
+    AlertLimit:
+      description: Alert Limit.
+      example:
+        horizontalProtectionLevel: null
+        verticalProtectionLevel: null
+      properties:
+        horizontalProtectionLevel:
+          $ref: "#/components/schemas/HorizontalProtectionLevel"
+        verticalProtectionLevel:
+          $ref: "#/components/schemas/VerticalProtectionLevel"
+      required:
+        - horizontalProtectionLevel
+      type: object
+    HorizontalProtectionLevel:
+      description: Contains the Horizontal Protection Level
+      maximum: 50000
+      minimum: 0
+      type: integer
+    VerticalProtectionLevel:
+      description: Contains the Vertical Protection Level
+      maximum: 50000
+      minimum: 0
+      type: integer
+    UpLocRepAddrAfRm:
+      anyOf: []
+      description: Represents the user plane addressing information.
+      example:
+        ipv4Addrs:
+          - 198.51.100.1
+          - 198.51.100.1
+        ipv6Addrs:
+          - 2001:db8:85a3::8a2e:370:7334
+          - 2001:db8:85a3::8a2e:370:7334
+        fqdn: null
+      nullable: true
+      properties:
+        ipv4Addrs:
+          items:
+            $ref: "#/components/schemas/Ipv4Addr"
+          minItems: 1
+          type: array
+        ipv6Addrs:
+          items:
+            $ref: "#/components/schemas/Ipv6Addr"
+          minItems: 1
+          type: array
+        fqdn:
+          $ref: "#/components/schemas/Fqdn"
+      type: object
+    UpCumEvtRptCriteria:
+      description: Criteria for sending cumulative events reports over control plane
+      example:
+        evtRptTimeCriteria: 1
+        evtRptCountCriteria: 5
+      properties:
+        evtRptTimeCriteria:
+          type: integer
+        evtRptCountCriteria:
+          type: integer
+      type: object
+    ApplicationlayerId:
+      description: |
+        String identifying an UE with application layer ID. The format of the application layer ID parameter is same as the Application layer ID defined in clause 11.3.4 of 3GPP TS 24.554.
+      type: string
+    Float:
+      description: string with format 'float' as defined in OpenAPI.
+      format: float
+      type: number
+    Tai:
+      description: Contains the tracking area identity as described in 3GPP 23.003
+      example:
+        plmnId:
+          mcc: null
+          mnc: null
+        tac: null
+        nid: null
+      properties:
+        plmnId:
+          $ref: "#/components/schemas/PlmnId"
+        tac:
+          $ref: "#/components/schemas/Tac"
+        nid:
+          $ref: "#/components/schemas/Nid"
+      required:
+        - plmnId
+        - tac
+      type: object
+    Tac:
+      description: |
+        2 or 3-octet string identifying a tracking area code as specified in clause 9.3.3.10 of 3GPP TS 38.413, in hexadecimal representation. Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent 4 bits. The most significant character representing the 4 most significant bits of the TAC shall appear first in the string, and the character representing the 4 least significant bit of the TAC shall appear last in the string.
+      pattern: "(^[A-Fa-f0-9]{4}$)|(^[A-Fa-f0-9]{6}$)"
+      type: string
+    Guami:
+      description: "Globally Unique AMF Identifier constructed out of PLMN, Network and AMF identity."
+      example:
+        plmnId:
+          mcc: null
+          mnc: null
+          nid: null
+        amfId: null
+      properties:
+        plmnId:
+          $ref: "#/components/schemas/PlmnIdNid"
+        amfId:
+          $ref: "#/components/schemas/AmfId"
+      required:
+        - amfId
+        - plmnId
+      type: object
+    PlmnIdNid:
+      description: |
+        Contains the serving core network operator PLMN ID and, for an SNPN, the NID that together with the PLMN ID identifies the SNPN.
+      example:
+        mcc: null
+        mnc: null
+        nid: null
+      properties:
+        mcc:
+          $ref: "#/components/schemas/Mcc"
+        mnc:
+          $ref: "#/components/schemas/Mnc"
+        nid:
+          $ref: "#/components/schemas/Nid"
+      required:
+        - mcc
+        - mnc
+      type: object
+    AmfId:
+      description: |
+        String identifying the AMF ID composed of AMF Region ID (8 bits), AMF Set ID (10 bits) and AMF  Pointer (6 bits) as specified in clause 2.10.1 of 3GPP TS 23.003. It is encoded as a string of  6 hexadecimal characters (i.e., 24 bits).
+      pattern: "^[A-Fa-f0-9]{6}$"
+      type: string
+    AccessType:
+      description: Indicates whether the access is  via 3GPP or via non-3GPP.
+      enum:
+        - 3GPP_ACCESS
+        - NON_3GPP_ACCESS
+      type: string
+    CmState:
+      description: Describes the connection management state of a UE
+      enum:
+        - IDLE
+        - CONNECTED
+      type: string
+    AccessTokenErr:
+      description: Error returned in the access token response message
+      properties:
+        error:
+          enum:
+            - invalid_request
+            - invalid_client
+            - invalid_grant
+            - unauthorized_client
+            - unsupported_grant_type
+            - invalid_scope
+          type: string
+        error_description:
+          type: string
+        error_uri:
+          type: string
+      required:
+        - error
+      type: object
+    AccessTokenReq:
+      description: Contains information related to the access token request
+      properties:
+        grant_type:
+          enum:
+            - client_credentials
+          type: string
+        nfInstanceId:
+          $ref: "#/components/schemas/NfInstanceId"
+        nfType:
+          $ref: "#/components/schemas/NFType"
+        targetNfType:
+          $ref: "#/components/schemas/NFType"
+        scope:
+          pattern: "^([a-zA-Z0-9_:-]+)( [a-zA-Z0-9_:-]+)*$"
+          type: string
+        targetNfInstanceId:
+          $ref: "#/components/schemas/NfInstanceId"
+        requesterPlmn:
+          $ref: "#/components/schemas/PlmnId"
+        requesterPlmnList:
+          items:
+            $ref: "#/components/schemas/PlmnId"
+          minItems: 2
+          type: array
+        requesterSnssaiList:
+          items:
+            $ref: "#/components/schemas/Snssai"
+          minItems: 1
+          type: array
+        requesterFqdn:
+          $ref: "#/components/schemas/Fqdn"
+        requesterSnpnList:
+          items:
+            $ref: "#/components/schemas/PlmnIdNid"
+          minItems: 1
+          type: array
+        targetPlmn:
+          $ref: "#/components/schemas/PlmnId"
+        targetSnpn:
+          $ref: "#/components/schemas/PlmnIdNid"
+        targetSnssaiList:
+          items:
+            $ref: "#/components/schemas/Snssai"
+          minItems: 1
+          type: array
+        targetNsiList:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        targetNfSetId:
+          $ref: "#/components/schemas/NfSetId"
+        targetNfServiceSetId:
+          $ref: "#/components/schemas/NfServiceSetId"
+        hnrfAccessTokenUri:
+          $ref: "#/components/schemas/Uri"
+        sourceNfInstanceId:
+          $ref: "#/components/schemas/NfInstanceId"
+      required:
+        - grant_type
+        - nfInstanceId
+        - scope
+      type: object
+    NoProfileMatchInfo:
+      description: Provides the reason for not finding NF matching the search criteria
+      properties:
+        reason:
+          $ref: "#/components/schemas/NoProfileMatchReason"
+        queryParamCombinationList:
+          items:
+            $ref: "#/components/schemas/QueryParamCombination"
+          minItems: 1
+          type: array
+      required:
+        - reason
+      type: object
+    NoProfileMatchReason:
+      description: No Profile Match Reason
+      enum:
+        - REQUESTER_PLMN_NOT_ALLOWED
+        - TARGET_NF_SUSPENDED
+        - TARGET_NF_UNDISCOVERABLE
+        - QUERY_PARAMS_COMBINATION_NO_MATCH
+        - TARGET_NF_TYPE_NOT_SUPPORTED
+        - UNSPECIFIED
+      type: string
+    QueryParamCombination:
+      description: Contains a list of Query Parameters
+      properties:
+        queryParams:
+          items:
+            $ref: "#/components/schemas/QueryParameter"
+          minItems: 1
+          type: array
+      required:
+        - queryParams
+      type: object
+    QueryParameter:
+      description: Contains the name and value of a query parameter
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+      required:
+        - name
+        - value
+      type: object
+    Binary:
+      description: string with format 'binary' as defined in OpenAPI.
+      format: binary
+      type: string
+    Ipv4Addr:
+      description: |
+        String identifying a IPv4 address formatted in the 'dotted decimal' notation as defined in RFC 1166.
+      example: 198.51.100.1
+      pattern: "^(([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])\\.){3}([0-9]|[1-9][0-9]|1[0-9][0-9]|2[0-4][0-9]|25[0-5])$"
+      type: string
+    Ipv6Addr:
+      description: |
+        String identifying an IPv6 address formatted according to clause 4 of RFC5952. The mixed IPv4 IPv6 notation according to clause 5 of RFC5952 shall not be used.
+      example: 2001:db8:85a3::8a2e:370:7334
+      pattern: "^(((:|(0?|([1-9a-f][0-9a-f]{0,3}))):)((0?|([1-9a-f][0-9a-f]{0,3})):){0,6}(:|(0?|([1-9a-f][0-9a-f]{0,3}))))|((([^:]+:){7}([^:]+))|((([^:]+:)*[^:]+)?::(([^:]+:)*[^:]+)?)))$"
+      type: string
+    NFType:
+      description: NF types known to NRF
+      enum:
+        - NRF
+        - UDM
+        - AMF
+        - SMF
+        - AUSF
+        - NEF
+        - PCF
+        - SMSF
+        - NSSF
+        - UDR
+        - LMF
+        - GMLC
+        - 5G_EIR
+        - SEPP
+        - UPF
+        - N3IWF
+        - AF
+        - UDSF
+        - BSF
+        - CHF
+        - NWDAF
+        - PCSCF
+        - CBCF
+        - HSS
+        - UCMF
+        - SOR_AF
+        - SPAF
+        - MME
+        - SCSAS
+        - SCEF
+        - SCP
+        - NSSAAF
+        - ICSCF
+        - SCSCF
+        - DRA
+        - IMS_AS
+        - AANF
+        - 5G_DDNMF
+        - NSACF
+        - MFAF
+        - EASDF
+        - DCCF
+        - MB_SMF
+        - TSCTSF
+        - ADRF
+        - GBA_BSF
+        - CEF
+        - MB_UPF
+        - NSWOF
+        - PKMF
+        - MNPF
+        - SMS_GMSC
+        - SMS_IWMSC
+        - MBSF
+        - MBSTF
+        - PANF
+        - IP_SM_GW
+        - SMS_ROUTER
+        - DCSF
+        - MRF
+        - MRFP
+        - MF
+        - SLPKMF
+        - RH
+      type: string
+    Snssai:
+      description: |
+        When Snssai needs to be converted to string (e.g. when used in maps as key), the string shall be composed of one to three digits "sst" optionally followed by "-" and 6 hexadecimal digits "sd".
+      properties:
+        sst:
+          description: |
+            Unsigned integer, within the range 0 to 255, representing the Slice/Service Type. It indicates the expected Network Slice behaviour in terms of features and services. Values 0 to 127 correspond to the standardized SST range. Values 128 to 255 correspond to the Operator-specific range. See clause 28.4.2 of 3GPP TS 23.003. Standardized values are defined in clause 5.15.2.2 of 3GPP TS 23.501.
+          maximum: 255
+          minimum: 0
+          type: integer
+        sd:
+          description: |
+            3-octet string, representing the Slice Differentiator, in hexadecimal representation. Each character in the string shall take a value of "0" to "9", "a" to "f" or "A" to "F" and shall represent 4 bits. The most significant character representing the 4 most significant bits of the SD shall appear first in the string, and the character representing the 4 least significant bit of the SD shall appear last in the string. This is an optional parameter that complements the Slice/Service type(s) to allow to differentiate amongst multiple Network Slices of the same Slice/Service type. This IE shall be absent if no SD value is associated with the SST.
+          pattern: "^[A-Fa-f0-9]{6}$"
+          type: string
+      required:
+        - sst
+      type: object
+    NfSetId:
+      description: |
+        NF Set Identifier (see clause 28.12 of 3GPP TS 23.003), formatted as the following string "set<Set ID>.<nftype>set.5gc.mnc<MNC>.mcc<MCC>", or "set<SetID>.<NFType>set.5gc.nid<NID>.mnc<MNC>.mcc<MCC>" with <MCC> encoded as defined in clause 5.4.2 ("Mcc" data type definition) <MNC> encoding the Mobile Network Code part of the PLMN, comprising 3 digits.
+          If there are only 2 significant digits in the MNC, one "0" digit shall be inserted
+          at the left side to fill the 3 digits coding of MNC.  Pattern: '^[0-9]{3}$'
+        <NFType> encoded as a value defined in Table 6.1.6.3.3-1 of 3GPP TS 29.510 but
+          with lower case characters <Set ID> encoded as a string of characters consisting of
+          alphabetic characters (A-Z and a-z), digits (0-9) and/or the hyphen (-) and that
+          shall end with either an alphabetic character or a digit.
+      type: string
+    NfServiceSetId:
+      description: |
+        NF Service Set Identifier (see clause 28.12 of 3GPP TS 23.003) formatted as the following string "set<Set ID>.sn<Service Name>.nfi<NF Instance ID>.5gc.mnc<MNC>.mcc<MCC>", or "set<SetID>.sn<ServiceName>.nfi<NFInstanceID>.5gc.nid<NID>.mnc<MNC>.mcc<MCC>" with <MCC> encoded as defined in clause 5.4.2 ("Mcc" data type definition) <MNC> encoding the Mobile Network Code part of the PLMN, comprising 3 digits.
+          If there are only 2 significant digits in the MNC, one "0" digit shall be inserted
+          at the left side to fill the 3 digits coding of MNC.  Pattern: '^[0-9]{3}$'
+        <NID> encoded as defined in clause 5.4.2 ("Nid" data type definition) <NFInstanceId> encoded as defined in clause 5.3.2 <ServiceName> encoded as defined in 3GPP TS 29.510 <Set ID> encoded as a string of characters consisting of alphabetic
+          characters (A-Z and a-z), digits (0-9) and/or the hyphen (-) and that shall end
+          with either an alphabetic character or a digit.
+      type: string
+    DetermineLocation_request:
+      properties:
+        jsonData:
+          $ref: "#/components/schemas/InputData"
+        binaryDataLppMessage:
+          format: binary
+          type: string
+          x-multipart-content-type: application/vnd.3gpp.lpp
+          x-multipart-ref: "{binaryDataLppMessage}"
+        binaryDataLppMessageExt1:
+          format: binary
+          type: string
+          x-multipart-content-type: application/vnd.3gpp.lpp
+          x-multipart-ref: "{binaryDataLppMessageExt1}"
+        binaryDataLppMessageExt2:
+          format: binary
+          type: string
+          x-multipart-content-type: application/vnd.3gpp.lpp
+          x-multipart-ref: "{binaryDataLppMessageExt2}"
+      type: object
+  securitySchemes:
+    oAuth2ClientCredentials:
+      flows:
+        clientCredentials:
+          scopes:
+            nlmf-loc: Access to the Nlmf_Location API
+            nlmf-loc:determine-location:invoke: Access to invoke Determine Location
+            nlmf-loc:cancel-location:invoke: Access to invoke Cancel Location
+            nlmf-loc:location-context-transfer:invoke: Access to invoke Location Context
+            nlmf-loc:measure-location:invoke: Access to invoke Location Measurement
+            nlmf-loc:up-subscriptions:invoke: Access to invoke UP Subscription
+            nlmf-loc:configure-up:invoke: Access to invoke UP Config
+          tokenUrl: "{nrfApiRoot}/oauth2/token"
+      type: oauth2

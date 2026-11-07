@@ -1,0 +1,593 @@
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package context
+
+import (
+	"fmt"
+	"math"
+	"reflect"
+	"strconv"
+	"strings"
+	"sync"
+
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/pcf/logger"
+	"github.com/omec-project/util/idgenerator"
+)
+
+// key is supi
+type UeContext struct {
+	// Udr Ref
+	UdrUri   string
+	UdrUriMu sync.RWMutex
+
+	// SmPolicyDataMu guards the SmPolicyData map itself — its shape, not the contents of the
+	// entries. Iterating a Go map while another goroutine inserts into or deletes from it is a
+	// fatal runtime error, not merely a race, and the configuration poll loop iterates it
+	// periodically while session create and delete mutate it from request handlers.
+	SmPolicyDataMu sync.RWMutex
+	// SMPolicy
+	SmPolicyData map[string]*UeSmPolicyData // use smPolicyId(ue.Supi-pduSessionId) as key
+	// App Session Related
+	// AppSessionIDGenerator uint64
+	AppSessionIDGenerator *idgenerator.IDGenerator
+	// PolicyAuth
+	AfRoutReq *models.AfRoutingRequirement
+	AspId     string
+	// Policy Decision
+	AppSessionIdStore           *AppSessionIdStore
+	PolicyDataSubscriptionStore *models.PolicyDataSubscription
+	PolicyDataChangeStore       *models.PolicyDataChangeNotification
+
+	// Ue Context
+	Supi                      string
+	Gpsi                      string
+	Pei                       string
+	AMPolicyData              map[string]*UeAMPolicyData // use PolAssoId(ue.Supi-numPolId) as key
+	GroupIds                  []string
+	PolAssociationIDGenerator uint32
+}
+
+type UeAMPolicyData struct {
+	PolAssoId         string
+	AccessType        models.AccessType
+	NotificationUri   string
+	ServingPlmn       models.PlmnIdNid
+	AltNotifIpv4Addrs []string
+	AltNotifIpv6Addrs []string
+	// TODO: AMF Status Change
+	AmfStatusUri string
+	Guami        *models.Guami
+	ServiveName  string
+	// TraceReq *TraceData
+	// about AF request
+	Pras map[string]models.PresenceInfo
+	// related to UDR Subscription Data
+	AmPolicyData *models.AmPolicyData // Svbscription Data
+	// Corresponding UE
+	PcfUe *UeContext
+	// Policy Association
+	ServAreaRes *models.ServiceAreaRestriction
+	UserLoc     *models.UserLocation
+	TimeZone    string
+	SuppFeat    string
+	Triggers    []models.RequestTrigger
+	Rfsp        int32
+}
+
+type UeSmPolicyData struct {
+	// PduSessionId    int32
+	// DNN             string
+	// NotificationUri string
+	// Snssai                 models.Snssai
+	// PduSessionType         models.PduSessionType
+	// IPAddress              models.IpAddress
+	// IPDomain               string
+	// Var3gppPsDataOffStatus bool
+	// SmfId                  string
+	// TraceReq *TraceData
+	// RecoveryTime     *time.Time
+	// FlowMapsToPackFiltIds  map[string][]string // use Flow Description(in TS 29214) as key map to pcc rule ids
+	PackFiltMapToPccRuleId map[string]string // use PackFiltId as Key
+	// Related to GBR
+	RemainGbrUL *float64
+	RemainGbrDL *float64
+	// related to UDR Subscription Data
+	SmPolicyData *models.SmPolicyData // Svbscription Data
+	// related to Policy
+	PolicyContext  *models.SmPolicyContextData
+	PolicyDecision *models.SmPolicyDecision
+	// related to AppSession
+	//
+	// AppSessionsMu guards the map itself. The application-function handlers insert and delete
+	// entries while the configuration poll loop reads the map to decide whether a session is
+	// AF-managed, and a Go map read concurrent with a map write is a fatal runtime throw that
+	// takes the process down rather than a race that merely corrupts a value.
+	AppSessionsMu sync.RWMutex
+	AppSessions   map[string]bool // related appSessionId
+	// Corresponding UE
+	PcfUe               *UeContext
+	PackFiltIdGenarator int32
+	PccRuleIdGenarator  int32
+	ChargingIdGenarator int32
+}
+
+// NewUeAMPolicyData returns created UeAMPolicyData data and insert this data to Ue.AMPolicyData with assolId as key
+func (ue *UeContext) NewUeAMPolicyData(assolId string, req models.PolicyAssociationRequest) *UeAMPolicyData {
+	ue.Gpsi = req.GetGpsi()
+	ue.Pei = req.GetPei()
+	ue.GroupIds = req.GetGroupIds()
+	ue.AMPolicyData[assolId] = &UeAMPolicyData{
+		PolAssoId:         assolId,
+		ServAreaRes:       req.ServAreaRes,
+		AltNotifIpv4Addrs: req.GetAltNotifIpv4Addrs(),
+		AltNotifIpv6Addrs: req.GetAltNotifIpv6Addrs(),
+		AccessType:        req.GetAccessType(),
+		NotificationUri:   req.GetNotificationUri(),
+		ServingPlmn:       req.GetServingPlmn(),
+		TimeZone:          req.GetTimeZone(),
+		Rfsp:              req.GetRfsp(),
+		Guami:             req.Guami,
+		UserLoc:           req.UserLoc,
+		ServiveName:       string(req.GetServiveName()),
+		PcfUe:             ue,
+	}
+	ue.AMPolicyData[assolId].Pras = make(map[string]models.PresenceInfo)
+	return ue.AMPolicyData[assolId]
+}
+
+// returns UeSmPolicyData and insert related info to Ue with smPolId
+func (ue *UeContext) NewUeSmPolicyData(
+	key string, request models.SmPolicyContextData, smData *models.SmPolicyData,
+) *UeSmPolicyData {
+	if smData == nil {
+		return nil
+	}
+	data := UeSmPolicyData{}
+	data.PolicyContext = &request
+	// data.DNN = request.Dnn
+	// data.Snssai = *request.SliceInfo
+	// data.PduSessionId = request.PduSessionId
+	// data.PduSessionType = request.PduSessionType
+	// switch request.PduSessionType {
+	// case models.PduSessionType_IPV4:
+	// 	data.IPAddress.Ipv4Addr = request.Ipv4Address
+	// 	data.IPDomain = request.IpDomain
+	// case models.PduSessionType_IPV6:
+	// 	data.IPAddress.Ipv6Prefix = request.Ipv6AddressPrefix
+	// case models.PduSessionType_IPV4_V6:
+	// 	data.IPAddress.Ipv4Addr = request.Ipv4Address
+	// 	data.IPAddress.Ipv6Prefix = request.Ipv6AddressPrefix
+	// 	data.IPDomain = request.IpDomain
+	// }
+	// data.NotificationUri = request.NotificationUri
+	// data.SmfId = request.SmfId
+	// data.Var3gppPsDataOffStatus = request.Var3gppPsDataOffStatus
+	data.SmPolicyData = smData
+	data.PackFiltIdGenarator = 1
+	data.PackFiltMapToPccRuleId = make(map[string]string)
+	data.AppSessions = make(map[string]bool)
+	// data.RefToAmPolicy = amData
+	data.PccRuleIdGenarator = 1
+	data.ChargingIdGenarator = 1
+	data.PcfUe = ue
+	ue.SmPolicyDataMu.Lock()
+	ue.SmPolicyData[key] = &data
+	ue.SmPolicyDataMu.Unlock()
+	return &data
+}
+
+// Remove Pcc rule which PccRuleId in the policy
+func (policy *UeSmPolicyData) RemovePccRule(pccRuleId string, deletedSmPolicyDec *models.SmPolicyDecision) error {
+	decision := policy.PolicyDecision
+	if decision == nil {
+		return fmt.Errorf("can not find the Policy Decision")
+	}
+	if rule, exist := decision.PccRules[pccRuleId]; exist {
+		if deletedSmPolicyDec != nil {
+			if deletedSmPolicyDec.PccRules == nil {
+				deletedSmPolicyDec.PccRules = make(map[string]models.PccRule)
+			}
+			deletedSmPolicyDec.PccRules[pccRuleId] = models.PccRule{}
+		}
+		for _, info := range rule.FlowInfos {
+			delete(policy.PackFiltMapToPccRuleId, info.GetPackFiltId())
+		}
+		for _, id := range rule.RefQosData {
+			if decision.QosDecs != nil {
+				policy.IncreaseRemainGBR(id)
+				delete(decision.GetQosDecs(), id)
+				if len(decision.GetQosDecs()) == 0 {
+					decision.QosDecs = nil
+				}
+			} else {
+				break
+			}
+		}
+		if rule.GetRefCondData() != "" {
+			if decision.Conds != nil {
+				delete(decision.Conds, rule.GetRefCondData())
+				if len(decision.Conds) == 0 {
+					decision.Conds = nil
+				}
+				if deletedSmPolicyDec != nil {
+					if deletedSmPolicyDec.Conds == nil {
+						deletedSmPolicyDec.Conds = make(map[string]models.ConditionData)
+					}
+					deletedSmPolicyDec.Conds[rule.GetRefCondData()] = models.ConditionData{}
+				}
+			}
+		}
+		for _, id := range rule.RefChgData {
+			if decision.ChgDecs != nil {
+				delete(decision.ChgDecs, id)
+				if len(decision.ChgDecs) == 0 {
+					decision.ChgDecs = nil
+				}
+				if deletedSmPolicyDec != nil {
+					if deletedSmPolicyDec.ChgDecs == nil {
+						deletedSmPolicyDec.ChgDecs = make(map[string]models.ChargingData)
+					}
+					deletedSmPolicyDec.ChgDecs[id] = models.ChargingData{}
+				}
+			} else {
+				break
+			}
+		}
+		for _, id := range rule.RefTcData {
+			if decision.TraffContDecs != nil {
+				delete(decision.GetTraffContDecs(), id)
+				if len(decision.GetTraffContDecs()) == 0 {
+					decision.TraffContDecs = nil
+				}
+				if deletedSmPolicyDec != nil {
+					if deletedSmPolicyDec.TraffContDecs == nil {
+						m := make(map[string]models.TrafficControlData)
+						deletedSmPolicyDec.TraffContDecs = &m
+					}
+					traffContDecs := *deletedSmPolicyDec.TraffContDecs
+					traffContDecs[id] = models.TrafficControlData{}
+				}
+			} else {
+				break
+			}
+		}
+		for _, id := range rule.RefUmData {
+			if decision.UmDecs != nil {
+				delete(decision.UmDecs, id)
+				if len(decision.UmDecs) == 0 {
+					decision.UmDecs = nil
+				}
+				if deletedSmPolicyDec != nil {
+					if deletedSmPolicyDec.UmDecs == nil {
+						deletedSmPolicyDec.UmDecs = make(map[string]models.UsageMonitoringData)
+					}
+					deletedSmPolicyDec.UmDecs[id] = models.UsageMonitoringData{}
+				}
+			} else {
+				break
+			}
+		}
+		delete(decision.PccRules, pccRuleId)
+	} else {
+		return fmt.Errorf("can not find the pccRuleId[%s] in Session[%d]", pccRuleId, policy.PolicyContext.PduSessionId)
+	}
+	return nil
+}
+
+// AddAppSession records that an application function now manages this session.
+func (policy *UeSmPolicyData) AddAppSession(appSessionId string) {
+	policy.AppSessionsMu.Lock()
+	defer policy.AppSessionsMu.Unlock()
+	policy.AppSessions[appSessionId] = true
+}
+
+// RemoveAppSession drops an application session that has been released.
+func (policy *UeSmPolicyData) RemoveAppSession(appSessionId string) {
+	policy.AppSessionsMu.Lock()
+	defer policy.AppSessionsMu.Unlock()
+	delete(policy.AppSessions, appSessionId)
+}
+
+// HasAppSessions reports whether an application function is managing this session.
+func (policy *UeSmPolicyData) HasAppSessions() bool {
+	policy.AppSessionsMu.RLock()
+	defer policy.AppSessionsMu.RUnlock()
+	return len(policy.AppSessions) > 0
+}
+
+// AppSessionIds returns the application session ids as a snapshot.
+//
+// Callers walk the ids to send terminations and notifications, which must not happen under the
+// lock: the far end can be slow, and the handlers that insert and delete entries would block
+// behind it.
+func (policy *UeSmPolicyData) AppSessionIds() []string {
+	policy.AppSessionsMu.RLock()
+	defer policy.AppSessionsMu.RUnlock()
+	ids := make([]string, 0, len(policy.AppSessions))
+	for appSessionId := range policy.AppSessions {
+		ids = append(ids, appSessionId)
+	}
+	return ids
+}
+
+// Check if the afEvent exists in smPolicy
+func (policy *UeSmPolicyData) CheckRelatedAfEvent(event models.AfEventPcf) (found bool) {
+	for _, appSessionId := range policy.AppSessionIds() {
+		if val, ok := PCF_Self().AppSessionPool.Load(appSessionId); ok {
+			appSession := val.(*AppSessionData)
+			for afEvent := range appSession.Events {
+				if afEvent == event {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// Arrange Exist Event policy Sm policy about afevents and return if it changes or not and
+func (policy *UeSmPolicyData) ArrangeExistEventSubscription() (changed bool) {
+	triggers := []models.PolicyControlRequestTrigger{}
+	for _, trigger := range policy.PolicyDecision.PolicyCtrlReqTriggers {
+		var afEvent models.AfEventPcf
+		switch trigger {
+		case models.POLICYCONTROLREQUESTTRIGGER_PLMN_CH: // PLMN Change
+			afEvent = models.AFEVENTPCF_PLMN_CHG
+		case models.POLICYCONTROLREQUESTTRIGGER_QOS_NOTIF:
+			// SMF notify PCF when receiving from RAN that QoS can/can't be guaranteed (subsclause 4.2.4.20 in TS29512) (always)
+			afEvent = models.AFEVENTPCF_QOS_NOTIF
+		case models.POLICYCONTROLREQUESTTRIGGER_SUCC_RES_ALLO:
+			// Successful resource allocation (subsclause 4.2.6.5.5, 4.2.4.14 in TS29512)
+			afEvent = models.AFEVENTPCF_SUCCESSFUL_RESOURCES_ALLOCATION
+		case models.POLICYCONTROLREQUESTTRIGGER_AC_TY_CH: // Change of RatType
+			afEvent = models.AFEVENTPCF_ACCESS_TYPE_CHANGE
+		case models.POLICYCONTROLREQUESTTRIGGER_US_RE: // UMC
+			afEvent = models.AFEVENTPCF_USAGE_REPORT
+		}
+		if afEvent != "" && !policy.CheckRelatedAfEvent(afEvent) {
+			changed = true
+		} else {
+			triggers = append(triggers, trigger)
+		}
+	}
+	policy.PolicyDecision.PolicyCtrlReqTriggers = triggers
+	return
+}
+
+// Increase remain GBR of this policy and returns original UL DL GBR for resume case
+func (policy *UeSmPolicyData) IncreaseRemainGBR(qosId string) (origUl, origDl *float64) {
+	decision := policy.PolicyDecision
+	if decision == nil {
+		return
+	}
+	if decision.QosDecs == nil {
+		return
+	}
+	if qos, exist := (*decision.QosDecs)[qosId]; exist {
+		if qos.GetVar5qi() <= 4 {
+			// Add GBR
+			origUl = IncreaseRamainBitRate(policy.RemainGbrUL, qos.GetGbrUl())
+			origDl = IncreaseRamainBitRate(policy.RemainGbrDL, qos.GetGbrDl())
+		}
+	}
+	return
+}
+
+// Increase remain Bit Rate and returns original Bit Rate
+func IncreaseRamainBitRate(remainBitRate *float64, reqBitRate string) (orig *float64) {
+	if remainBitRate != nil && reqBitRate != "" {
+		bitRate, err := ConvertBitRateToKbps(reqBitRate)
+		if err == nil {
+			orig = new(float64)
+			*orig = *remainBitRate
+			*remainBitRate += bitRate
+		}
+	}
+	return
+}
+
+// Decrease remain GBR of this policy and returns UL DL GBR
+func (policy *UeSmPolicyData) DecreaseRemainGBR(req *models.RequestedQos) (gbrDl, gbrUl string, err error) {
+	if req == nil {
+		return "", "", nil
+	}
+	if req.Var5qi <= 4 {
+		err = DecreaseRamainBitRate(policy.RemainGbrDL, req.GetGbrDl())
+		if err != nil {
+			return
+		}
+		gbrDl = req.GetGbrDl()
+		err = DecreaseRamainBitRate(policy.RemainGbrUL, req.GetGbrUl())
+		if err != nil {
+			return
+		}
+		gbrUl = req.GetGbrUl()
+	}
+	return
+}
+
+// Decrease remain Bit Rate
+func DecreaseRamainBitRate(remainBitRate *float64, reqBitRate string) error {
+	if reqBitRate != "" {
+		bitRate, err := ConvertBitRateToKbps(reqBitRate)
+		if err != nil {
+			return err
+		}
+		if remainBitRate != nil {
+			if *remainBitRate < bitRate {
+				return fmt.Errorf("request BitRate exceed Dnn Aggregate BitRate of UE")
+			}
+			*remainBitRate -= bitRate
+		}
+	}
+	return nil
+}
+
+// Returns remin Bit rate string and decrease ir to zero
+func DecreaseRamainBitRateToZero(remainBitRate *float64) string {
+	if remainBitRate != nil {
+		bitRate := ConvertBitRateToString(*remainBitRate)
+		*remainBitRate = 0
+		return bitRate
+	}
+	return ""
+}
+
+// returns AM Policy which AccessType and plmnId match
+func (ue *UeContext) FindAMPolicy(anType models.AccessType, plmnId *models.PlmnIdNid) *UeAMPolicyData {
+	if ue == nil || plmnId == nil {
+		return nil
+	}
+	for _, amPolicy := range ue.AMPolicyData {
+		if amPolicy.AccessType == anType && reflect.DeepEqual(amPolicy.ServingPlmn, *plmnId) {
+			return amPolicy
+		}
+	}
+	return nil
+}
+
+// Return App Session Id with format "ue.Supi-%d" which be allocated
+func (ue *UeContext) AllocUeAppSessionId(context *PCFContext) string {
+	var allocID int64
+	var err error
+	if allocID, err = ue.AppSessionIDGenerator.Allocate(); err != nil {
+		logger.CtxLog.Warnf("allocate AppSessionId error: %+v", err)
+		return ""
+	}
+	appSessionID := fmt.Sprintf("%s-%d", ue.Supi, allocID)
+	return appSessionID
+}
+
+// returns SM Policy by IPv4
+func (ue *UeContext) SMPolicyFindByIpv4(v4 string) *UeSmPolicyData {
+	ue.SmPolicyDataMu.RLock()
+	defer ue.SmPolicyDataMu.RUnlock()
+
+	for _, smPolicy := range ue.SmPolicyData {
+		if smPolicy.PolicyContext.GetIpv4Address() == v4 {
+			return smPolicy
+		}
+	}
+	return nil
+}
+
+// returns SM Policy by IPv6
+func (ue *UeContext) SMPolicyFindByIpv6(v6 string) *UeSmPolicyData {
+	ue.SmPolicyDataMu.RLock()
+	defer ue.SmPolicyDataMu.RUnlock()
+
+	for _, smPolicy := range ue.SmPolicyData {
+		if smPolicy.PolicyContext.GetIpv6AddressPrefix() == v6 {
+			return smPolicy
+		}
+	}
+	return nil
+}
+
+// returns SM Policy by IPv4
+func (ue *UeContext) SMPolicyFindByIdentifiersIpv4(
+	v4 string, sNssai *models.Snssai, dnn string, ipDomain string,
+) *UeSmPolicyData {
+	ue.SmPolicyDataMu.RLock()
+	defer ue.SmPolicyDataMu.RUnlock()
+	for id, smPolicy := range ue.SmPolicyData {
+		policyContext := smPolicy.PolicyContext
+		if policyContext.GetIpv4Address() != v4 {
+			continue
+		}
+		if dnn != "" && policyContext.GetDnn() != dnn {
+			continue
+		}
+		if ipDomain != "" && policyContext.GetIpDomain() != "" && policyContext.GetIpDomain() != ipDomain {
+			continue
+		}
+		if sNssai != nil && !reflect.DeepEqual(sNssai, policyContext.SliceInfo) {
+			continue
+		}
+
+		logger.CtxLog.Debugf("smPolicy[%s] matched for IPv4: %s", id, v4)
+		return smPolicy
+	}
+
+	logger.CtxLog.Debugf(
+		"no matching SMPolicy found for IPv4: %s, DNN: %s, IPDomain: %s, S-NSSAI: %+v",
+		v4, dnn, ipDomain, sNssai)
+	return nil
+}
+
+// returns SM Policy by IPv6
+func (ue *UeContext) SMPolicyFindByIdentifiersIpv6(v6 string, sNssai *models.Snssai, dnn string) *UeSmPolicyData {
+	ue.SmPolicyDataMu.RLock()
+	defer ue.SmPolicyDataMu.RUnlock()
+
+	for _, smPolicy := range ue.SmPolicyData {
+		policyContext := smPolicy.PolicyContext
+		if policyContext.GetIpv6AddressPrefix() == v6 {
+			if dnn != "" && policyContext.Dnn != dnn {
+				continue
+			}
+			if sNssai != nil && !reflect.DeepEqual(sNssai, policyContext.SliceInfo) {
+				continue
+			}
+			return smPolicy
+		}
+	}
+	return nil
+}
+
+// AppSessionIdStore -
+type AppSessionIdStore struct {
+	AppSessionContext models.AppSessionContext
+	AppSessionId      string
+}
+
+var AppSessionContextStore []AppSessionIdStore
+
+// BdtPolicyData_store -
+var (
+	BdtPolicyData_store    []models.BdtPolicyData
+	CreateFailBdtDateStore []models.BdtData
+)
+
+// Convert bitRate string to float64 with uint Kbps
+func ConvertBitRateToKbps(bitRate string) (kBitRate float64, err error) {
+	list := strings.Split(bitRate, " ")
+	if len(list) != 2 {
+		err = fmt.Errorf("bitRate format error")
+		return 0, err
+	}
+	// parse exponential value with 2 as base
+	exp := 0.0
+	switch list[1] {
+	case "Tbps":
+		exp = 30.0
+	case "Gbps":
+		exp = 20.0
+	case "Mbps":
+		exp = 10.0
+	case "Kbps":
+		exp = 0.0
+	case "bps":
+		exp = -10.0
+	default:
+		err = fmt.Errorf("bitRate format error")
+		return 0, err
+	}
+	// parse value from string to float64
+	kBitRate, err = strconv.ParseFloat(list[0], 64)
+	if err == nil {
+		kBitRate = kBitRate * math.Pow(2, exp)
+	} else {
+		kBitRate = 0.0
+	}
+	return kBitRate, err
+}
+
+// Convert bitRate from float64 to String
+func ConvertBitRateToString(kBitRate float64) (bitRate string) {
+	return fmt.Sprintf("%f Kbps", kBitRate)
+}

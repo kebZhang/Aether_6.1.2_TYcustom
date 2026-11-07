@@ -1,0 +1,23 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.ausf.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ausf
+  labels:
+{{ tuple "ausf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  type: {{ .Values.config.ausf.serviceType }}
+  selector:
+{{ tuple "ausf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.ausf.prometheus "TCP" .Values.config.ausf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "sbi" .Values.config.ausf.sbi "TCP" .Values.config.ausf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

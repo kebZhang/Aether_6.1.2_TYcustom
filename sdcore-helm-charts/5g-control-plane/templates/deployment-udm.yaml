@@ -1,0 +1,83 @@
+{{/*
+# Copyright 2024-present Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- if .Values.config.udm.deploy }}
+{{ tuple "udm" . | include "5g-control-plane.service_account" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: udm
+  labels:
+{{ tuple "udm" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  replicas: 1
+  #serviceName: udm-headless
+  selector:
+    matchLabels:
+{{ tuple "udm" . | include "5g-control-plane.metadata_labels" | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ tuple "udm" . | include "5g-control-plane.metadata_labels" | indent 8 }}
+      annotations:
+    {{- tuple "udm" . | include "5g-control-plane.certs_pod_annotations" | nindent 8 }}
+    {{- with .Values.config.udm.podAnnotations }}
+    {{- toYaml . | nindent 8 }}
+    {{- end }}
+    spec:
+    {{- tuple "udm" . | include "5g-control-plane.pod_common" | trim | nindent 6 }}
+      initContainers:
+      {{- if .Values.config.webui.deploy }}
+      {{- tuple . | include "5g-control-plane.wait_webui" | nindent 6 }}
+      {{- end }}
+      {{- tuple "wait-udm-module" "udm" . | include "5g-control-plane.wait_dns" | nindent 6 }}
+      {{- tuple "wait-udr-module" "udr" . | include "5g-control-plane.wait_dns" | nindent 6 }}
+    {{ tuple "udm" . | include "5g-control-plane.certs_init" | nindent 6 }}
+      {{ if .Values.config.coreDump.enabled }}
+{{ tuple "udm" . | include "5g-control-plane.coredump_init" | nindent 6 }}
+      {{ end }}
+      containers:
+      - name: udm
+        image: {{ .Values.images.repository }}{{ .Values.images.tags.udm }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+      {{ if .Values.config.coreDump.enabled }}
+        securityContext:
+          runAsUser: 0
+      {{ end }}
+        stdin: true
+        tty: true
+        command: ["/opt/udm-run.sh"]
+        env:
+      {{- if eq .Values.config.GIN.mode "release" }}
+        - name: GIN_MODE
+          value: release
+      {{- end }}
+{{ tuple "udm" . | include "5g-control-plane.certs_env" | indent 8 }}
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        {{- tuple .Values.config.udm.sbi.port . | include "5g-control-plane.probes" | nindent 8 }}
+      {{- if .Values.resources.enabled }}
+        resources:
+{{ toYaml .Values.resources.udm | indent 10 }}
+      {{- end }}
+        volumeMounts:
+        - name: nf-config
+          mountPath: /opt
+{{ tuple "udm" . | include "5g-control-plane.certs_volume_mounts" | indent 8 }}
+      {{- if .Values.config.coreDump.enabled }}
+        - name: coredump
+          mountPath: /tmp/coredump
+      {{- end }}
+      volumes:
+      - name: nf-config
+        configMap:
+          name: udm
+          defaultMode: 493
+      {{- tuple "udm" . | include "5g-control-plane.certs_volumes" | nindent 6 }}
+{{- end }}

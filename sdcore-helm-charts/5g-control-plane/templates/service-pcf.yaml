@@ -1,0 +1,27 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.pcf.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pcf
+  labels:
+{{ tuple "pcf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  type: {{ .Values.config.pcf.serviceType }}
+{{- if .Values.config.pcf.externalIp }}
+  externalIPs:
+    - {{ .Values.config.pcf.externalIp }}
+{{- end }}
+  selector:
+{{ tuple "pcf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.pcf.prometheus "TCP" .Values.config.pcf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "sbi" .Values.config.pcf.sbi "TCP" .Values.config.pcf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

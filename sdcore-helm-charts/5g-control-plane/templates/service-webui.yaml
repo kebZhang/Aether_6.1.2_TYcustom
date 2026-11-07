@@ -1,0 +1,28 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.webui.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webui
+  labels:
+{{ tuple "webui" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+{{- with .Values.config.webui.serviceAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+spec:
+  type: {{ .Values.config.webui.serviceType }}
+  selector:
+{{ tuple "webui" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.webui.prometheus "TCP" .Values.config.webui.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "urlport-http" .Values.config.webui.urlport "TCP" .Values.config.webui.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "rest" .Values.config.webui.rest "TCP" .Values.config.webui.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

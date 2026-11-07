@@ -1,0 +1,468 @@
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package message
+
+import (
+	"github.com/omec-project/amf/context"
+	"github.com/omec-project/amf/logger"
+	ngap_message "github.com/omec-project/amf/ngap/message"
+	"github.com/omec-project/amf/producer/callback"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2/models"
+)
+
+// backOffTimerUint = 7 means backoffTimer is null
+func SendDLNASTransport(ue *context.RanUe, anType models.AccessType, payloadContainerType uint8, nasPdu []byte,
+	pduSessionId int32, cause uint8, backOffTimerUint *uint8, backOffTimer uint8,
+) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send DL NAS Transport")
+	var causePtr *uint8
+	if cause != 0 {
+		causePtr = &cause
+	}
+	nasMsg, err := BuildDLNASTransport(amfUe, anType, payloadContainerType, nasPdu,
+		uint8(pduSessionId), causePtr, backOffTimerUint, backOffTimer)
+	if err != nil {
+		amfUe.GmmLog.Error(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendNotification(ue *context.RanUe, nasMsg []byte) {
+	if ue == nil {
+		logger.GmmLog.Errorln("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Errorln("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Notification")
+
+	if context.AMF_Self().T3565Cfg.Enable {
+		cfg := context.AMF_Self().T3565Cfg
+		amfUe.T3565 = context.NewTimer(cfg.ExpireTime, cfg.MaxRetryTimes, func(expireTimes int32) {
+			amfUe.GmmLog.Warnf("T3565 expires, retransmit Notification (retry: %d)", expireTimes)
+			ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+		}, func() {
+			amfUe.GmmLog.Warnf("T3565 Expires %d times, abort notification procedure", cfg.MaxRetryTimes)
+			if amfUe.GetOnGoing(models.ACCESSTYPE__3_GPP_ACCESS).Procedure != context.OnGoingProcedureN2Handover {
+				callback.SendN1N2TransferFailureNotification(amfUe, models.N1N2MESSAGETRANSFERCAUSE_UE_NOT_RESPONDING)
+			}
+			amfUe.T3565 = nil // clear the timer
+		})
+	}
+}
+
+func SendIdentityRequest(ue *context.RanUe, typeOfIdentity uint8) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Identity Request")
+
+	nasMsg, err := BuildIdentityRequest(typeOfIdentity)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendAuthenticationRequest(ue *context.RanUe) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+
+	amfUe.GmmLog.Infoln("send Authentication Request")
+
+	if amfUe.AuthenticationCtx == nil {
+		amfUe.GmmLog.Errorln("authentication Context of UE is nil")
+		return
+	}
+
+	nasMsg, err := BuildAuthenticationRequest(amfUe)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+
+	if context.AMF_Self().T3560Cfg.Enable {
+		cfg := context.AMF_Self().T3560Cfg
+		amfUe.T3560 = context.NewTimer(cfg.ExpireTime, cfg.MaxRetryTimes, func(expireTimes int32) {
+			amfUe.GmmLog.Warnf("T3560 expires, retransmit Authentication Request (retry: %d)", expireTimes)
+			ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+		}, func() {
+			amfUe.GmmLog.Warnf("T3560 Expires %d times, abort authentication procedure & ongoing 5GMM procedure",
+				cfg.MaxRetryTimes)
+			accessType := models.ACCESSTYPE__3_GPP_ACCESS
+			if ue.Ran != nil {
+				accessType = ue.Ran.AnType
+			}
+			// Remove() deletes the whole UE; publish the Del first or a resolved-SUPI subscriber is
+			// left stale in Kafka (the Add published on SUPI resolution never gets a matching Del).
+			// Serialized with the EventChannel so this can't race an in-flight NAS message for the
+			// same UE (e.g. a concurrent AuthenticationResponse publishing an Add). Re-checked inside
+			// the closure: an AuthenticationResponse already queued ahead of this one can advance the
+			// UE past Authentication before this runs, and this abort is then stale.
+			amfUe.RunSerialized(func() {
+				if amfUe.State[accessType].Current() != context.Authentication {
+					amfUe.GmmLog.Infof("T3560 abort for accessType[%v] is stale (state is now %v); skipping removal",
+						accessType, amfUe.State[accessType].Current())
+					return
+				}
+				amfUe.PublishUeCtxtInfoOnRemoval(accessType)
+				amfUe.Remove()
+			})
+		})
+	}
+}
+
+func SendServiceAccept(ue *context.RanUe, anType models.AccessType, pDUSessionStatus *[16]bool, reactivationResult *[16]bool,
+	errPduSessionId, errCause []uint8,
+) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Service Accept")
+
+	nasMsg, err := BuildServiceAccept(amfUe, anType, pDUSessionStatus, reactivationResult, errPduSessionId, errCause)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendConfigurationUpdateCommand(amfUe *context.AmfUe, accessType models.AccessType,
+	networkSlicingIndication *nasType.NetworkSlicingIndication,
+) {
+	amfUe.GmmLog.Infoln("configuration Update Command")
+
+	nasMsg, err := BuildConfigurationUpdateCommand(amfUe, accessType, networkSlicingIndication)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	mobilityRestrictionList := ngap_message.BuildIEMobilityRestrictionList(amfUe)
+	ngap_message.SendDownlinkNasTransport(amfUe.GetRanUe(accessType), nasMsg, &mobilityRestrictionList)
+}
+
+func SendAuthenticationReject(ue *context.RanUe, eapMsg string) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Authentication Reject")
+
+	nasMsg, err := BuildAuthenticationReject(amfUe, eapMsg)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendAuthenticationResult(ue *context.RanUe, eapSuccess bool, eapMsg string) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	if ue.AmfUe == nil {
+		logger.GmmLog.Errorln("AmfUe is nil")
+		return
+	}
+
+	ue.AmfUe.GmmLog.Infoln("send Authentication Result")
+
+	nasMsg, err := BuildAuthenticationResult(ue.AmfUe, eapSuccess, eapMsg)
+	if err != nil {
+		ue.AmfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendServiceReject(ue *context.RanUe, pDUSessionStatus *[16]bool, cause uint8) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Service Reject")
+
+	nasMsg, err := BuildServiceReject(pDUSessionStatus, cause)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+// T3502: This IE may be included to indicate a value for timer T3502 during the initial registration
+// eapMessage: if the REGISTRATION REJECT message is used to convey EAP-failure message
+func SendRegistrationReject(ue *context.RanUe, cause5GMM uint8, eapMessage string) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Registration Reject")
+
+	nasMsg, err := BuildRegistrationReject(amfUe, cause5GMM, eapMessage)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+// eapSuccess: only used when authType is EAP-AKA', set the value to false if authType is not EAP-AKA'
+// eapMessage: only used when authType is EAP-AKA', set the value to "" if authType is not EAP-AKA'
+func SendSecurityModeCommand(ue *context.RanUe, anType models.AccessType, eapSuccess bool, eapMessage string) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Security Mode Command")
+
+	nasMsg, err := BuildSecurityModeCommand(amfUe, anType, eapSuccess, eapMessage)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+
+	if context.AMF_Self().T3560Cfg.Enable {
+		cfg := context.AMF_Self().T3560Cfg
+		amfUe.T3560 = context.NewTimer(cfg.ExpireTime, cfg.MaxRetryTimes, func(expireTimes int32) {
+			amfUe.GmmLog.Warnf("T3560 expires, retransmit Security Mode Command (retry: %d)", expireTimes)
+			ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+		}, func() {
+			amfUe.GmmLog.Warnf("T3560 Expires %d times, abort security mode control procedure", cfg.MaxRetryTimes)
+			// Remove() deletes the whole UE; publish the Del first or a resolved-SUPI subscriber is
+			// left stale in Kafka (the Add published on SUPI resolution never gets a matching Del).
+			// Serialized with the EventChannel so this can't race an in-flight NAS message for the
+			// same UE (e.g. a concurrent SecurityModeComplete publishing a Mod). Re-checked inside the
+			// closure: a response already queued ahead of this one can advance the UE past
+			// SecurityMode before this runs, and this abort is then stale.
+			amfUe.RunSerialized(func() {
+				if amfUe.State[anType].Current() != context.SecurityMode {
+					amfUe.GmmLog.Infof("T3560 abort for accessType[%v] is stale (state is now %v); skipping removal",
+						anType, amfUe.State[anType].Current())
+					return
+				}
+				amfUe.PublishUeCtxtInfoOnRemoval(anType)
+				amfUe.Remove()
+			})
+		})
+	}
+}
+
+func SendDeregistrationRequest(ue *context.RanUe, accessType uint8, reRegistrationRequired bool, cause5GMM uint8) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Deregistration Request")
+
+	// setting accesstype
+	amfUe.DeregistrationTargetAccessType = accessType
+
+	nasMsg, err := BuildDeregistrationRequest(ue, accessType, reRegistrationRequired, cause5GMM)
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+
+	if context.AMF_Self().T3522Cfg.Enable {
+		cfg := context.AMF_Self().T3522Cfg
+		amfUe.T3522 = context.NewTimer(cfg.ExpireTime, cfg.MaxRetryTimes, func(expireTimes int32) {
+			amfUe.GmmLog.Warnf("T3522 expires, retransmit Deregistration Request (retry: %d)", expireTimes)
+			ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+		}, func() {
+			amfUe.GmmLog.Warnf("T3522 Expires %d times, abort deregistration procedure", cfg.MaxRetryTimes)
+			amfUe.T3522 = nil // clear the timer
+			// Remove() deletes the whole UE; publish the Del first or a resolved-SUPI subscriber is
+			// left stale in Kafka (the Add published on SUPI resolution never gets a matching Del).
+			// Serialized with the EventChannel so this can't race an in-flight NAS message for the
+			// same UE (e.g. a concurrent DeregistrationAccept publishing a Del itself). Each branch
+			// re-checks inside the closure that the access is still DeregistrationInitiated: a
+			// DeregistrationAccept already queued ahead of this one can advance the UE past it before
+			// this runs, and this abort is then stale.
+			switch accessType {
+			case nasMessage.AccessType3GPP:
+				amfUe.GmmLog.Warnln("UE accessType[3GPP] transfer to Deregistered state")
+				amfUe.RunSerialized(func() {
+					if amfUe.State[models.ACCESSTYPE__3_GPP_ACCESS].Current() != context.DeregistrationInitiated {
+						amfUe.GmmLog.Infof("T3522 abort for accessType[3GPP] is stale (state is now %v); skipping removal",
+							amfUe.State[models.ACCESSTYPE__3_GPP_ACCESS].Current())
+						return
+					}
+					amfUe.State[models.ACCESSTYPE__3_GPP_ACCESS].Set(context.Deregistered)
+					amfUe.PublishUeCtxtInfoOnRemoval(models.ACCESSTYPE__3_GPP_ACCESS)
+					amfUe.Remove()
+				})
+			case nasMessage.AccessTypeNon3GPP:
+				amfUe.GmmLog.Warnln("UE accessType[Non3GPP] transfer to Deregistered state")
+				amfUe.RunSerialized(func() {
+					if amfUe.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Current() != context.DeregistrationInitiated {
+						amfUe.GmmLog.Infof("T3522 abort for accessType[Non3GPP] is stale (state is now %v); skipping removal",
+							amfUe.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Current())
+						return
+					}
+					amfUe.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Set(context.Deregistered)
+					amfUe.PublishUeCtxtInfoOnRemoval(models.ACCESSTYPE_NON_3_GPP_ACCESS)
+					amfUe.Remove()
+				})
+			default:
+				amfUe.GmmLog.Warnln("UE accessType[3GPP] transfer to Deregistered state")
+				amfUe.GmmLog.Warnln("UE accessType[Non3GPP] transfer to Deregistered state")
+				amfUe.RunSerialized(func() {
+					threeGppDeregistering := amfUe.State[models.ACCESSTYPE__3_GPP_ACCESS].Current() == context.DeregistrationInitiated
+					non3GppDeregistering := amfUe.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Current() == context.DeregistrationInitiated
+					if !threeGppDeregistering && !non3GppDeregistering {
+						amfUe.GmmLog.Infoln("T3522 abort for both access types is stale; skipping removal")
+						return
+					}
+					amfUe.State[models.ACCESSTYPE__3_GPP_ACCESS].Set(context.Deregistered)
+					amfUe.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Set(context.Deregistered)
+					amfUe.PublishUeCtxtInfoOnRemoval(models.ACCESSTYPE__3_GPP_ACCESS)
+					amfUe.Remove()
+				})
+			}
+		})
+	}
+}
+
+func SendDeregistrationAccept(ue *context.RanUe) {
+	if ue == nil {
+		logger.GmmLog.Error("RanUe is nil")
+		return
+	}
+	amfUe := ue.AmfUe
+	if amfUe == nil {
+		logger.GmmLog.Error("AmfUe is nil")
+		return
+	}
+	amfUe.GmmLog.Infoln("send Deregistration Accept")
+
+	nasMsg, err := BuildDeregistrationAccept()
+	if err != nil {
+		amfUe.GmmLog.Errorln(err.Error())
+		return
+	}
+	ngap_message.SendDownlinkNasTransport(ue, nasMsg, nil)
+}
+
+func SendRegistrationAccept(
+	ue *context.AmfUe,
+	anType models.AccessType,
+	pDUSessionStatus *[16]bool,
+	reactivationResult *[16]bool,
+	errPduSessionId, errCause []uint8,
+	pduSessionResourceSetupList *ngapType.PDUSessionResourceSetupListCxtReq,
+) {
+	ue.GmmLog.Infoln("send Registration Accept")
+
+	nasMsg, err := BuildRegistrationAccept(ue, anType, pDUSessionStatus, reactivationResult, errPduSessionId, errCause)
+	if err != nil {
+		ue.GmmLog.Errorln(err.Error())
+		return
+	}
+
+	ranUe := ue.GetRanUe(anType)
+	if ranUe == nil {
+		ue.GmmLog.Errorln("Error in sending RegistrationAccept")
+		return
+	}
+
+	if ranUe.UeContextRequest {
+		ngap_message.SendInitialContextSetupRequest(ue, anType, nasMsg, pduSessionResourceSetupList, nil, nil, nil)
+	} else {
+		ngap_message.SendDownlinkNasTransport(ue.GetRanUe(models.ACCESSTYPE__3_GPP_ACCESS), nasMsg, nil)
+	}
+
+	if context.AMF_Self().T3550Cfg.Enable {
+		cfg := context.AMF_Self().T3550Cfg
+		ue.T3550 = context.NewTimer(cfg.ExpireTime, cfg.MaxRetryTimes, func(expireTimes int32) {
+			ranUe := ue.GetRanUe(anType)
+			if ranUe == nil {
+				ue.GmmLog.Warnln("[NAS] UE Context released, abort retransmission of Registration Accept")
+				ue.T3550 = nil
+			} else {
+				if ranUe.UeContextRequest && !ranUe.RecvdInitialContextSetupResponse {
+					ngap_message.SendInitialContextSetupRequest(ue, anType, nasMsg, pduSessionResourceSetupList, nil, nil, nil)
+				} else {
+					ue.GmmLog.Warnf("T3550 expires, retransmit Registration Accept (retry: %d)", expireTimes)
+					ngap_message.SendDownlinkNasTransport(ranUe, nasMsg, nil)
+				}
+			}
+		}, func() {
+			ue.GmmLog.Warnf("T3550 Expires %d times, abort retransmission of Registration Accept", cfg.MaxRetryTimes)
+			ue.T3550 = nil // clear the timer
+			// TS 24.501 5.5.1.2.8 case c, 5.5.1.3.8 case c
+			ue.State[anType].Set(context.Registered)
+			ue.ClearRegistrationRequestData(anType)
+		})
+	}
+}

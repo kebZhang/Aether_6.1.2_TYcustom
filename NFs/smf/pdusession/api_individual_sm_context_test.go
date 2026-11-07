@@ -1,0 +1,56 @@
+// Copyright (c) 2026 Intel Corporation
+// SPDX-License-Identifier: Apache-2.0
+
+package pdusession
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/util/httpwrapper"
+)
+
+func TestRenderSmContextResponseUsesMultipartForErrorWithBinaryParts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+
+	n1File, err := os.CreateTemp(t.TempDir(), "n1")
+	if err != nil {
+		t.Fatalf("create temp n1 file: %v", err)
+	}
+	n2File, err := os.CreateTemp(t.TempDir(), "n2")
+	if err != nil {
+		t.Fatalf("create temp n2 file: %v", err)
+	}
+
+	extProblemDetails := models.NewExtProblemDetails()
+	extProblemDetails.SetStatus(http.StatusBadRequest)
+	jsonData := models.NewSmContextUpdateError(*extProblemDetails)
+	jsonData.SetN1SmMsg(models.RefToBinaryData{ContentId: "n1"})
+	jsonData.SetN2SmInfo(models.RefToBinaryData{ContentId: "n2"})
+	errBody := models.NewUpdateSmContext400Response()
+	errBody.SetJsonData(*jsonData)
+	errBody.SetBinaryDataN1SmMessage(n1File)
+	errBody.SetBinaryDataN2SmInformation(n2File)
+	response := &httpwrapper.Response{
+		Status: http.StatusBadRequest,
+		Body:   errBody,
+	}
+
+	if !shouldRenderUpdateSmContextMultipart(response.Body) {
+		t.Fatal("expected error response with binary parts to be marked for multipart rendering")
+	}
+
+	renderSmContextResponse(ctx, response)
+	if _, err := os.Stat(n1File.Name()); !os.IsNotExist(err) {
+		t.Fatalf("expected n1 temp file to be cleaned up, stat err=%v", err)
+	}
+	if _, err := os.Stat(n2File.Name()); !os.IsNotExist(err) {
+		t.Fatalf("expected n2 temp file to be cleaned up, stat err=%v", err)
+	}
+}

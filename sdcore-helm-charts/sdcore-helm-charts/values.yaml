@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: 2024-present Aether Project (Part of Linux Foundation) <dev@lists.aetherproject.org>
+# SPDX-FileCopyrightText: 2021-present Open Networking Foundation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Default values for all SD-CORE Helm charts.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+#Images tagged for the release
+omec-control-plane:
+  enable4G: false
+  #images:
+  #  tags:
+      #4G control Plane images
+  #config:
+  #  config4g:
+  #    deploy: true
+
+omec-user-plane:
+  enable: true
+  #images:
+  #  tags:
+      #4G/5G user plane images
+  #config:
+  #  upf:
+  #    cfgFiles:
+  #      upf.jsonc:
+  #        cpiface:
+
+omec-sub-provision:
+  enable: true
+  #images:
+  #  tags:
+
+5g-control-plane:
+  enable5G: true
+  #images:
+  #  tags:
+      #5G NF images
+
+5g-ran-sim:
+  enable: false
+  #images:
+  #  tags:
+      #RAN SIM image

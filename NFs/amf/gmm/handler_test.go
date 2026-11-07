@@ -1,0 +1,2307 @@
+// Copyright 2019 free5GC.org
+// SPDX-FileCopyrightText: 2025 Canonical Ltd.
+// SPDX-FileCopyrightText: 2025 Intel Corporation
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package gmm
+
+import (
+	ctxt "context"
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/omec-project/amf/consumer"
+	"github.com/omec-project/amf/context"
+	"github.com/omec-project/amf/util"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/ngap/v2/ngapType"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/util/fsm"
+	"go.uber.org/zap"
+)
+
+const (
+	testPei = "imei-001010000000001"
+	testDnn = "internet-1"
+)
+
+func TestHandleIdentityResponseRejectsUndecodableSuci(t *testing.T) {
+	ue := &context.AmfUe{GmmLog: zap.NewNop().Sugar()}
+	identityResponse := nasMessage.NewIdentityResponse(0)
+	identityResponse.SetLen(1)
+	identityResponse.Buffer[0] = nasMessage.MobileIdentity5GSTypeSuci
+
+	err := HandleIdentityResponse(ue, identityResponse)
+	if err == nil {
+		t.Fatal("expected malformed SUCI identity response to fail")
+	}
+	if !strings.Contains(err.Error(), "decode SUCI failed") {
+		t.Fatalf("expected SUCI decode failure, got %v", err)
+	}
+}
+
+func TestHandleMobilityAndPeriodicRegistrationUpdatingRejectsNilRegistrationRequest(t *testing.T) {
+	ue := &context.AmfUe{
+		GmmLog:       zap.NewNop().Sugar(),
+		NASLog:       zap.NewNop().Sugar(),
+		RanUe:        make(map[models.AccessType]*context.RanUe),
+		AllowedNssai: make(map[models.AccessType][]models.AllowedSnssai),
+		State:        make(map[models.AccessType]*fsm.State),
+	}
+	ran := context.NewAmfRanDefault()
+	ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{
+		AmfUe: ue,
+		Ran:   ran,
+		Log:   zap.NewNop().Sugar(),
+	}
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+
+	err := HandleMobilityAndPeriodicRegistrationUpdating(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS)
+	if err == nil {
+		t.Fatal("expected nil registration request to fail")
+	}
+	if !strings.Contains(err.Error(), "registration request is nil") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func tempBinaryFile(t *testing.T, name string, data []byte) **os.File {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("open temp file: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = file.Close()
+	})
+	return &file
+}
+
+func TestHandleMobilityAndPeriodicRegistrationUpdatingSnapshotsRegistrationRequest(t *testing.T) {
+	originalSendReleaseSmContextRequest := sendReleaseSmContextRequest
+	sendReleaseSmContextRequest = func(
+		ue *context.AmfUe,
+		smContext *context.SmContext,
+		cause *context.CauseAll,
+		n2SmInfoType models.N2SmInfoType,
+		n2Info []byte,
+	) (*models.ProblemDetails, error) {
+		ue.RegistrationRequest = nil
+		return nil, errors.New("forced release error")
+	}
+	defer func() {
+		sendReleaseSmContextRequest = originalSendReleaseSmContextRequest
+	}()
+
+	ue := &context.AmfUe{
+		GmmLog:                zap.NewNop().Sugar(),
+		NASLog:                zap.NewNop().Sugar(),
+		RanUe:                 make(map[models.AccessType]*context.RanUe),
+		AllowedNssai:          make(map[models.AccessType][]models.AllowedSnssai),
+		OnGoing:               make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+		RegistrationArea:      make(map[models.AccessType][]models.Tai),
+		State:                 make(map[models.AccessType]*fsm.State),
+		ReleaseCause:          make(map[models.AccessType]*context.CauseAll),
+		SubscriptionDataValid: true,
+		Pei:                   testPei,
+		SubscribedNssai: []models.SubscribedSnssai{{
+			SubscribedSnssai:  models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+			DefaultIndication: openapi.PtrBool(true),
+		}},
+	}
+	ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+	ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{Procedure: context.OnGoingProcedureNothing}
+	ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{Procedure: context.OnGoingProcedureNothing}
+
+	ranUe := &context.RanUe{
+		AmfUe: ue,
+		Log:   zap.NewNop().Sugar(),
+		Tai: models.Tai{
+			PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"},
+			Tac:    "000001",
+		},
+	}
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = ranUe
+	ue.Tai = ranUe.Tai
+	ue.Location.SetNrLocation(models.NrLocation{})
+
+	capability := nasType.NewCapability5GMM(nasMessage.RegistrationRequestCapability5GMMType)
+	capability.SetLen(13)
+
+	pduSessionStatus := nasType.NewPDUSessionStatus(nasMessage.RegistrationRequestPDUSessionStatusType)
+	pduSessionStatus.SetLen(2)
+
+	allowedPduSessionStatus := nasType.NewAllowedPDUSessionStatus(nasMessage.RegistrationRequestAllowedPDUSessionStatusType)
+	allowedPduSessionStatus.SetLen(2)
+
+	ue.RegistrationRequest = &nasMessage.RegistrationRequest{
+		Capability5GMM:          capability,
+		PDUSessionStatus:        pduSessionStatus,
+		AllowedPDUSessionStatus: allowedPduSessionStatus,
+	}
+
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+	smContext := context.NewSmContext(1)
+	smContext.SetAccessType(models.ACCESSTYPE__3_GPP_ACCESS)
+	smContext.SetSnssai(*snssai)
+	ue.SmContextList.Store(int32(1), smContext)
+
+	pduSessionId := int32(2)
+	ue.N1N2Message = &context.N1N2Message{
+		Request: models.N1N2MessageTransferRequest{
+			JsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &pduSessionId,
+				N2InfoContainer: &models.N2InfoContainer{
+					SmInfo: &models.N2SmInformation{
+						PduSessionId:  pduSessionId,
+						N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+						SNssai:        snssai,
+					},
+				},
+			},
+			BinaryDataN1Message:     tempBinaryFile(t, "n1.bin", []byte{0x01}),
+			BinaryDataN2Information: tempBinaryFile(t, "n2.bin", []byte{0x02}),
+		},
+	}
+
+	err := HandleMobilityAndPeriodicRegistrationUpdating(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS)
+	if err == nil {
+		t.Fatal("expected missing PDU session error")
+	}
+	if !strings.Contains(err.Error(), "pdu session id does not exist") {
+		t.Fatalf("expected missing PDU session error, got %v", err)
+	}
+	if ue.RegistrationRequest != nil {
+		t.Fatal("expected concurrent cleanup to clear the live registration request")
+	}
+	if ue.N1N2Message != nil {
+		t.Fatal("expected N1N2 message to be cleared on missing PDU session")
+	}
+	if _, ok := ue.SmContextFindByPDUSessionID(1); !ok {
+		t.Fatal("expected existing SM context to remain available")
+	}
+}
+
+func TestHandleServiceRequestSnapshotsN1N2Message(t *testing.T) {
+	originalSendReleaseSmContextRequest := sendReleaseSmContextRequest
+	sendReleaseSmContextRequest = func(
+		ue *context.AmfUe,
+		smContext *context.SmContext,
+		cause *context.CauseAll,
+		n2SmInfoType models.N2SmInfoType,
+		n2Info []byte,
+	) (*models.ProblemDetails, error) {
+		ue.N1N2Message = nil
+		return nil, errors.New("forced release error")
+	}
+	defer func() {
+		sendReleaseSmContextRequest = originalSendReleaseSmContextRequest
+	}()
+
+	ue := &context.AmfUe{
+		GmmLog:                   zap.NewNop().Sugar(),
+		NASLog:                   zap.NewNop().Sugar(),
+		RanUe:                    make(map[models.AccessType]*context.RanUe),
+		AllowedNssai:             make(map[models.AccessType][]models.AllowedSnssai),
+		OnGoing:                  make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+		RegistrationArea:         make(map[models.AccessType][]models.Tai),
+		State:                    make(map[models.AccessType]*fsm.State),
+		ReleaseCause:             make(map[models.AccessType]*context.CauseAll),
+		SubscriptionDataValid:    true,
+		SecurityContextAvailable: true,
+		Pei:                      testPei,
+	}
+	ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+	ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{Procedure: context.OnGoingProcedureNothing}
+	ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{Procedure: context.OnGoingProcedureNothing}
+	ue.NgKsi.Ksi = 1
+
+	ranUe := &context.RanUe{
+		AmfUe: ue,
+		Log:   zap.NewNop().Sugar(),
+		Tai: models.Tai{
+			PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"},
+			Tac:    "000001",
+		},
+	}
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = ranUe
+	ue.Tai = ranUe.Tai
+	ue.Location.SetNrLocation(models.NrLocation{})
+
+	pduSessionStatus := nasType.NewPDUSessionStatus(nasMessage.ServiceRequestPDUSessionStatusType)
+	pduSessionStatus.SetLen(2)
+
+	serviceRequest := nasMessage.NewServiceRequest(0)
+	serviceRequest.SetServiceTypeValue(nasMessage.ServiceTypeMobileTerminatedServices)
+	serviceRequest.PDUSessionStatus = pduSessionStatus
+
+	smContext := context.NewSmContext(1)
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+	smContext.SetAccessType(models.ACCESSTYPE__3_GPP_ACCESS)
+	smContext.SetSnssai(*snssai)
+	ue.SmContextList.Store(int32(1), smContext)
+
+	servicePduSessionId := int32(2)
+	ue.N1N2Message = &context.N1N2Message{
+		Request: models.N1N2MessageTransferRequest{
+			JsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &servicePduSessionId,
+				N2InfoContainer: &models.N2InfoContainer{
+					N2InformationClass: models.N2INFORMATIONCLASS_SM,
+					SmInfo: &models.N2SmInformation{
+						PduSessionId:  servicePduSessionId,
+						N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+						SNssai:        snssai,
+					},
+				},
+			},
+			BinaryDataN1Message:     tempBinaryFile(t, "srv-n1.bin", []byte{0x01}),
+			BinaryDataN2Information: tempBinaryFile(t, "srv-n2.bin", []byte{0x02}),
+		},
+	}
+
+	err := HandleServiceRequest(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS, serviceRequest)
+	if err == nil {
+		t.Fatal("expected missing PDU session error")
+	}
+	if !strings.Contains(err.Error(), "service request triggered by Network error for pduSessionId does not exist") {
+		t.Fatalf("expected missing PDU session error, got %v", err)
+	}
+	if ue.N1N2Message != nil {
+		t.Fatal("expected live N1N2 message to remain cleared after simulated concurrent cleanup")
+	}
+	if _, ok := ue.SmContextFindByPDUSessionID(1); !ok {
+		t.Fatal("expected existing SM context to remain available")
+	}
+}
+
+func TestHandleServiceRequestHighPriorityAccessHandledAsData(t *testing.T) {
+	// Service type 5 (high priority access) must be handled like service type
+	// 1 (data) instead of being rejected by the default case. The UE is set up
+	// with a Tai that differs from its RanUe's Tai, so the data-service path
+	// takes its "tracking area not allowed" branch and returns nil. Only the
+	// data path performs that check, so reaching it (nil, no "not supported"
+	// error) proves service type 5 falls through into the data case. An
+	// emergency Service Request is included as a control: it still hits the
+	// default case and is rejected.
+	newRegisteredUe := func() *context.AmfUe {
+		ue := &context.AmfUe{
+			GmmLog:                   zap.NewNop().Sugar(),
+			NASLog:                   zap.NewNop().Sugar(),
+			RanUe:                    make(map[models.AccessType]*context.RanUe),
+			OnGoing:                  make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+			State:                    make(map[models.AccessType]*fsm.State),
+			SubscriptionDataValid:    true,
+			SecurityContextAvailable: true,
+			Pei:                      testPei,
+		}
+		ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+		ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{Procedure: context.OnGoingProcedureNothing}
+		ue.NgKsi.Ksi = 1
+
+		ran := context.NewAmfRanDefault()
+		ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+
+		ranUe := &context.RanUe{
+			AmfUe: ue,
+			Log:   zap.NewNop().Sugar(),
+			Ran:   ran,
+			Tai: models.Tai{
+				PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"},
+				Tac:    "000002",
+			},
+		}
+		ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = ranUe
+		ue.Tai = models.Tai{
+			PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"},
+			Tac:    "000001",
+		}
+		return ue
+	}
+
+	tests := []struct {
+		name             string
+		serviceType      uint8
+		wantNotSupported bool
+	}{
+		{"data is accepted (baseline)", nasMessage.ServiceTypeData, false},
+		{"high priority access handled as data", nasMessage.ServiceTypeHighPriorityAccess, false},
+		{"emergency is still rejected (control)", nasMessage.ServiceTypeEmergencyServices, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ue := newRegisteredUe()
+			serviceRequest := nasMessage.NewServiceRequest(0)
+			serviceRequest.SetServiceTypeValue(tc.serviceType)
+
+			err := HandleServiceRequest(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS, serviceRequest)
+
+			if tc.wantNotSupported {
+				if err == nil || !strings.Contains(err.Error(), "is not supported") {
+					t.Fatalf("service type %d: expected \"not supported\" error, got %v", tc.serviceType, err)
+				}
+			} else if err != nil {
+				t.Fatalf("service type %d: expected nil error (handled as data), got %v", tc.serviceType, err)
+			}
+		})
+	}
+}
+
+func TestHandleInitialRegistrationSnapshotsRegistrationRequest(t *testing.T) {
+	originalHandleRequestedNssaiForRegistration := handleRequestedNssaiForRegistration
+	originalGetSubscribedNssaiForRegistration := getSubscribedNssaiForRegistration
+	originalCommunicateWithUDMForRegistration := communicateWithUDMForRegistration
+	originalAssignLadnInfoForRegistration := assignLadnInfoForRegistration
+	originalSendSearchNFInstancesForRegistration := sendSearchNFInstancesForRegistration
+	originalAmPolicyControlCreateForRegistration := amPolicyControlCreateForRegistration
+	originalSendRegistrationAcceptForRegistration := sendRegistrationAcceptForRegistration
+	defer func() {
+		handleRequestedNssaiForRegistration = originalHandleRequestedNssaiForRegistration
+		getSubscribedNssaiForRegistration = originalGetSubscribedNssaiForRegistration
+		communicateWithUDMForRegistration = originalCommunicateWithUDMForRegistration
+		assignLadnInfoForRegistration = originalAssignLadnInfoForRegistration
+		sendSearchNFInstancesForRegistration = originalSendSearchNFInstancesForRegistration
+		amPolicyControlCreateForRegistration = originalAmPolicyControlCreateForRegistration
+		sendRegistrationAcceptForRegistration = originalSendRegistrationAcceptForRegistration
+	}()
+
+	getSubscribedNssaiForRegistration = func(ctx ctxt.Context, ue *context.AmfUe) {
+		ue.SubscribedNssai = []models.SubscribedSnssai{{
+			SubscribedSnssai:  models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+			DefaultIndication: openapi.PtrBool(true),
+		}}
+	}
+	communicateWithUDMForRegistration = func(ctx ctxt.Context, ue *context.AmfUe, anType models.AccessType) error {
+		ue.SubscriptionDataValid = true
+		return nil
+	}
+	handleRequestedNssaiCalls := 0
+	handleRequestedNssaiForRegistration = func(ctx ctxt.Context, ue *context.AmfUe, registrationRequest *nasMessage.RegistrationRequest, anType models.AccessType) error {
+		handleRequestedNssaiCalls++
+		ue.RegistrationRequest = nil
+		ue.AllowedNssai[anType] = append(ue.AllowedNssai[anType], models.AllowedSnssai{
+			AllowedSnssai: models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+		})
+		return nil
+	}
+	assignLadnInfoForRegistration = func(ue *context.AmfUe, registrationRequest *nasMessage.RegistrationRequest, accessType models.AccessType) {
+	}
+	sendSearchNFInstancesForRegistration = func(
+		ctx ctxt.Context,
+		nrfUri string,
+		targetNfType, requestNfType models.NFType,
+		configure consumer.SearchNFInstancesRequestConfigurer,
+	) (*models.SearchResult, error) {
+		services := map[string]models.NFService{
+			"0": {
+				ServiceName:     models.SERVICENAME_NPCF_AM_POLICY_CONTROL,
+				NfServiceStatus: models.NFSERVICESTATUS_REGISTERED,
+				ApiPrefix:       openapi.PtrString("http://pcf.example.com"),
+			},
+		}
+		nfProfile := models.NFProfileDiscovery{
+			NfInstanceId: "pcf-instance",
+		}
+		nfProfile.SetNfServiceList(services)
+		return models.NewSearchResult(300, []models.NFProfileDiscovery{nfProfile}), nil
+	}
+	amPolicyControlCreateForRegistration = func(ctx ctxt.Context, ue *context.AmfUe, anType models.AccessType) (*models.ProblemDetails, error) {
+		return nil, nil
+	}
+	registrationAcceptSent := false
+	sendRegistrationAcceptForRegistration = func(
+		ue *context.AmfUe,
+		anType models.AccessType,
+		pDUSessionStatus *[16]bool,
+		reactivationResult *[16]bool,
+		errPduSessionId, errCause []uint8,
+		pduSessionResourceSetupList *ngapType.PDUSessionResourceSetupListCxtReq,
+	) {
+		registrationAcceptSent = true
+	}
+
+	amfSelf := context.AMF_Self()
+	originalSupportTaiLists := amfSelf.SupportTaiLists
+	originalT3502Value := amfSelf.T3502Value
+	originalT3512Value := amfSelf.T3512Value
+	defer func() {
+		amfSelf.SupportTaiLists = originalSupportTaiLists
+		amfSelf.T3502Value = originalT3502Value
+		amfSelf.T3512Value = originalT3512Value
+	}()
+	amfSelf.SupportTaiLists = []models.Tai{{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "1"}}
+	amfSelf.T3502Value = 720
+	amfSelf.T3512Value = 3600
+
+	ue := &context.AmfUe{
+		GmmLog:                zap.NewNop().Sugar(),
+		NASLog:                zap.NewNop().Sugar(),
+		RanUe:                 make(map[models.AccessType]*context.RanUe),
+		AllowedNssai:          make(map[models.AccessType][]models.AllowedSnssai),
+		RegistrationArea:      make(map[models.AccessType][]models.Tai),
+		State:                 make(map[models.AccessType]*fsm.State),
+		ReleaseCause:          make(map[models.AccessType]*context.CauseAll),
+		SubscriptionDataValid: true,
+		Pei:                   testPei,
+		Supi:                  "imsi-001010000000001",
+		SubscribedNssai: []models.SubscribedSnssai{{
+			SubscribedSnssai:  models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+			DefaultIndication: openapi.PtrBool(true),
+		}},
+	}
+	ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+
+	ran := context.NewAmfRanDefault()
+	ran.RanId = models.NewGlobalRanNodeId(models.PlmnId{Mcc: "001", Mnc: "01"})
+	ran.GnbIp = "10.0.0.1"
+	ranUe := &context.RanUe{
+		AmfUe:                 ue,
+		Ran:                   ran,
+		Log:                   zap.NewNop().Sugar(),
+		Tai:                   models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"},
+		RRCEstablishmentCause: "0",
+	}
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = ranUe
+	ue.Tai = ranUe.Tai
+
+	capability := nasType.NewCapability5GMM(nasMessage.RegistrationRequestCapability5GMMType)
+	capability.SetLen(13)
+	capability.SetLPP(1)
+
+	micoIndication := nasType.NewMICOIndication(0x0b)
+	micoIndication.SetRAAI(1)
+
+	requestedDRXParameters := nasType.NewRequestedDRXParameters(nasMessage.RegistrationRequestRequestedDRXParametersType)
+	requestedDRXParameters.SetLen(1)
+	requestedDRXParameters.SetDRXValue(nasMessage.DRXcycleParameterT64)
+
+	ue.RegistrationRequest = &nasMessage.RegistrationRequest{
+		Capability5GMM:         capability,
+		MICOIndication:         micoIndication,
+		RequestedDRXParameters: requestedDRXParameters,
+	}
+
+	err := HandleInitialRegistration(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS)
+	if err != nil {
+		t.Fatalf("expected initial registration to succeed, got %v", err)
+	}
+	if ue.RegistrationRequest != nil {
+		t.Fatal("expected live registration request to remain cleared after simulated concurrent cleanup")
+	}
+	if ue.Capability5GMM.GetLPP() != 1 {
+		t.Fatal("expected capability5GMM to be copied from the snapshotted registration request")
+	}
+	if ue.UESpecificDRX != nasMessage.DRXcycleParameterT64 {
+		t.Fatalf("expected DRX %d, got %d", nasMessage.DRXcycleParameterT64, ue.UESpecificDRX)
+	}
+	if len(ue.AllowedNssai[models.ACCESSTYPE__3_GPP_ACCESS]) == 0 {
+		t.Fatal("expected allowed NSSAI to be populated by the helper")
+	}
+	if handleRequestedNssaiCalls != 1 {
+		t.Fatalf("expected requested NSSAI helper to run once, got %d", handleRequestedNssaiCalls)
+	}
+	if !registrationAcceptSent {
+		t.Fatal("expected registration accept to be sent")
+	}
+}
+
+func newFuzzUE(fd *FuzzData) *context.AmfUe {
+	ue := &context.AmfUe{
+		GmmLog:       zap.NewNop().Sugar(),
+		RanUe:        make(map[models.AccessType]*context.RanUe),
+		AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+		State:        make(map[models.AccessType]*fsm.State),
+	}
+
+	// Setup SubscribedNssai
+	if fd.HasSubscribedNssai && fd.SubscribedNssaiLength > 0 {
+		ue.SubscribedNssai = make([]models.SubscribedSnssai, fd.SubscribedNssaiLength)
+		for i := range ue.SubscribedNssai {
+			ue.SubscribedNssai[i] = models.SubscribedSnssai{
+				SubscribedSnssai: models.Snssai{
+					Sst: int32(i + 1),
+					Sd:  openapi.PtrString(fmt.Sprintf("SD%d", i)),
+				},
+				DefaultIndication: openapi.PtrBool(i == 0), // Make the first one default
+			}
+		}
+	}
+
+	// Setup AllowedNssai
+	if fd.HasAllowedNssai && fd.AllowedNssaiLength > 0 {
+		allowedSlices := make([]models.AllowedSnssai, fd.AllowedNssaiLength)
+		for i := range allowedSlices {
+			allowedSlices[i] = models.AllowedSnssai{
+				AllowedSnssai: models.Snssai{
+					Sst: int32(i + 1),
+					Sd:  openapi.PtrString(fmt.Sprintf("SD%d", i)),
+				},
+			}
+		}
+		ue.AllowedNssai[models.ACCESSTYPE__3_GPP_ACCESS] = allowedSlices
+		ue.AllowedNssai[models.ACCESSTYPE_NON_3_GPP_ACCESS] = allowedSlices
+	}
+
+	// Setup RegistrationRequest
+	ue.RegistrationRequest = &nasMessage.RegistrationRequest{}
+
+	// Setup Capability5GMM
+	if fd.HasCapability5GMM {
+		capability := nasType.NewCapability5GMM(nasMessage.RegistrationRequestCapability5GMMType)
+		capability.SetLen(13)
+
+		// LPP capability - typically supported for location services
+		capability.SetLPP(1)
+
+		// HOAttach capability - handover attach support
+		if fd.AccessType == 1 { // 3GPP access
+			capability.SetHOAttach(1)
+		}
+
+		// S1Mode capability - for interworking with 4G
+		if fd.StateRegistered {
+			capability.SetS1Mode(1)
+		}
+
+		// For spare bits, either leave as zero or use minimal fuzz data
+		var spareBytes [12]uint8
+
+		// Only use first few bytes for fuzz data to avoid invalid capability combinations
+		if fd.HasAllowedNssai {
+			spareBytes[0] = fd.AllowedNssaiLength
+		}
+		if fd.HasSubscribedNssai {
+			spareBytes[1] = fd.SubscribedNssaiLength
+		}
+
+		// Leave remaining bytes as zero for valid NAS message
+		capability.SetSpare(spareBytes)
+
+		ue.RegistrationRequest.Capability5GMM = capability
+	}
+
+	// Setup LastVisitedRegisteredTAI
+	if fd.HasLastVisitedTAI {
+		tai := nasType.NewLastVisitedRegisteredTAI(nasMessage.RegistrationRequestLastVisitedRegisteredTAIType)
+		// Set up TAI with fuzz data
+		ue.RegistrationRequest.LastVisitedRegisteredTAI = tai
+	}
+
+	// Setup MICOIndication
+	if fd.HasMICOIndication {
+		micoIndication := nasType.NewMICOIndication(0x0b)
+
+		// Set RAAI (RRC Inactive Assistance Information) bit
+		raai := uint8(0)
+		if fd.StateRegistered {
+			raai = 1
+		}
+		micoIndication.SetRAAI(raai)
+
+		ue.RegistrationRequest.MICOIndication = micoIndication
+	}
+
+	// Setup RequestedDRXParameters
+	if fd.HasRequestedDRXParameters {
+		drxParams := nasType.NewRequestedDRXParameters(nasMessage.RegistrationRequestRequestedDRXParametersType)
+		drxParams.SetLen(1)
+		drxParams.SetDRXValue(uint8(fd.T3502ValueMs % 10))
+
+		ue.RegistrationRequest.RequestedDRXParameters = drxParams
+	}
+
+	// Setup other UE fields
+	ue.ServingAmfChanged = fd.ServingAmfChanged
+	ue.SubscriptionDataValid = fd.SubscriptionDataValid
+
+	// Setup PEI
+	if fd.HasPei && fd.PeiLength > 0 {
+		ue.Pei = generateString("PEI", int(fd.PeiLength))
+	}
+
+	// Setup SUPI and GUTI
+	if fd.SupiLength > 0 {
+		ue.Supi = generateString("SUPI", int(fd.SupiLength))
+	}
+	if fd.GutiLength > 0 {
+		ue.Guti = generateString("GUTI", int(fd.GutiLength))
+	}
+
+	// Setup PCF info
+	if fd.PcfUriLength > 0 {
+		ue.PcfUri = generateString("http://pcf", int(fd.PcfUriLength))
+	}
+	if fd.PcfIdLength > 0 {
+		ue.PcfId = generateString("PCF-ID", int(fd.PcfIdLength))
+	}
+
+	// Setup timers
+	ue.T3502Value = int(fd.T3502ValueMs)
+	ue.T3512Value = int(fd.T3512ValueMs)
+	ue.Non3gppDeregistrationTimerValue = int(fd.Non3gppDeregTimerValueMs)
+
+	// Setup RanUe
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+	ue.RanUe[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &fsm.State{}
+	if fd.StateRegistered {
+		ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS].Set(context.Registered)
+	}
+
+	// Setup AmPolicyAssociation
+	if fd.HasAmPolicyAssociation && fd.HasServAreaRes {
+		areas := make([]models.Area, fd.AreasLength)
+		for i := range areas {
+			areas[i] = models.Area{
+				Tacs: []string{fmt.Sprintf("TAC%d", i)},
+			}
+		}
+
+		var restrictionType models.RestrictionType
+		switch fd.RestrictionType {
+		case 0:
+			restrictionType = models.RESTRICTIONTYPE_ALLOWED_AREAS
+		case 1:
+			restrictionType = models.RESTRICTIONTYPE_NOT_ALLOWED_AREAS
+		default:
+			restrictionType = models.RESTRICTIONTYPE_ALLOWED_AREAS
+		}
+
+		servAreaRes := models.NewServiceAreaRestriction()
+		servAreaRes.SetRestrictionType(restrictionType)
+		servAreaRes.SetMaxNumOfTAs(int32(fd.MaxNumOfTAs))
+		servAreaRes.SetAreas(areas)
+		amPolicyAssociation := models.NewPolicyAssociationWithDefaults()
+		amPolicyAssociation.SetServAreaRes(*servAreaRes)
+		ue.AmPolicyAssociation = amPolicyAssociation
+	}
+
+	return ue
+}
+
+func TestPduSessionIDFromUL(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupUL     func() *nasMessage.ULNASTransport
+		expectedID  int32
+		expectError bool
+	}{
+		{
+			name: "nil PduSessionID2Value",
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			expectError: true,
+		},
+		{
+			name: "valid PduSessionID2Value with ID 1",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				pduSessionID2Value := nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				pduSessionID2Value.SetPduSessionID2Value(1)
+				ul.PduSessionID2Value = pduSessionID2Value
+				return ul
+			},
+			expectedID:  1,
+			expectError: false,
+		},
+		{
+			name: "valid PduSessionID2Value with ID 9",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				pduSessionID2Value := nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				pduSessionID2Value.SetPduSessionID2Value(9)
+				ul.PduSessionID2Value = pduSessionID2Value
+				return ul
+			},
+			expectedID:  9,
+			expectError: false,
+		},
+		{
+			name: "valid PduSessionID2Value with ID 15",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				pduSessionID2Value := nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				pduSessionID2Value.SetPduSessionID2Value(15)
+				ul.PduSessionID2Value = pduSessionID2Value
+				return ul
+			},
+			expectedID:  15,
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ul := tt.setupUL()
+			id, err := pduSessionIDFromUL(ul)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if id != tt.expectedID {
+					t.Errorf("got id=%d; want id=%d", id, tt.expectedID)
+				}
+			}
+		})
+	}
+}
+
+func TestIsEmergencyRequestAndIsInitialRequest(t *testing.T) {
+	tests := []struct {
+		name             string
+		requestType      *nasType.RequestType
+		requestTypeValue uint8
+		expectEmergency  bool
+		expectInitial    bool
+	}{
+		{
+			name:            "nil request type",
+			requestType:     nil,
+			expectEmergency: false,
+			expectInitial:   false,
+		},
+		{
+			name:             "initial emergency request",
+			requestType:      &nasType.RequestType{},
+			requestTypeValue: nasMessage.ULNASTransportRequestTypeInitialEmergencyRequest,
+			expectEmergency:  true,
+			expectInitial:    false,
+		},
+		{
+			name:             "existing emergency PDU session",
+			requestType:      &nasType.RequestType{},
+			requestTypeValue: nasMessage.ULNASTransportRequestTypeExistingEmergencyPduSession,
+			expectEmergency:  true,
+			expectInitial:    false,
+		},
+		{
+			name:             "initial request",
+			requestType:      &nasType.RequestType{},
+			requestTypeValue: nasMessage.ULNASTransportRequestTypeInitialRequest,
+			expectEmergency:  false,
+			expectInitial:    true,
+		},
+		{
+			name:             "modification request",
+			requestType:      &nasType.RequestType{},
+			requestTypeValue: nasMessage.ULNASTransportRequestTypeModificationRequest,
+			expectEmergency:  false,
+			expectInitial:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set up the request type if it's not nil
+			if tt.requestType != nil {
+				tt.requestType.SetRequestTypeValue(tt.requestTypeValue)
+			}
+
+			// Test isEmergencyRequest
+			if got := isEmergencyRequest(tt.requestType); got != tt.expectEmergency {
+				t.Errorf("isEmergencyRequest() = %v, want %v", got, tt.expectEmergency)
+			}
+
+			// Test isInitialRequest
+			if got := isInitialRequest(tt.requestType); got != tt.expectInitial {
+				t.Errorf("isInitialRequest() = %v, want %v", got, tt.expectInitial)
+			}
+		})
+	}
+}
+
+func TestSendNotForwarded(t *testing.T) {
+	tests := []struct {
+		name         string
+		hasRanUe     bool
+		accessType   models.AccessType
+		payload      []byte
+		pduSessionID int32
+		wantCalls    int
+	}{
+		{
+			name:         "no RanUe",
+			hasRanUe:     false,
+			accessType:   models.ACCESSTYPE__3_GPP_ACCESS,
+			payload:      nil,
+			pduSessionID: 7,
+			wantCalls:    0,
+		},
+		{
+			name:         "with RanUe 3GPP",
+			hasRanUe:     true,
+			accessType:   models.ACCESSTYPE__3_GPP_ACCESS,
+			payload:      []byte{0x01},
+			pduSessionID: 7,
+			wantCalls:    1,
+		},
+		{
+			name:         "with RanUe NON_3GPP",
+			hasRanUe:     true,
+			accessType:   models.ACCESSTYPE_NON_3_GPP_ACCESS,
+			payload:      []byte{0x02},
+			pduSessionID: 15,
+			wantCalls:    1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Setup mock
+			orig := sendDLNASTransport
+			defer func() { sendDLNASTransport = orig }()
+
+			calls := 0
+			var got struct {
+				an    models.AccessType
+				cause uint8
+				id    int32
+			}
+
+			sendDLNASTransport = func(_ *context.RanUe, an models.AccessType, _ uint8, _ []byte, id int32, c uint8, _ *uint8, _ uint8) {
+				calls++
+				got.an = an
+				got.cause = c
+				got.id = id
+			}
+
+			ue := &context.AmfUe{
+				GmmLog:       zap.NewNop().Sugar(),
+				RanUe:        make(map[models.AccessType]*context.RanUe),
+				AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+			}
+
+			if tt.hasRanUe {
+				ue.RanUe[tt.accessType] = &context.RanUe{AmfUe: ue}
+			}
+
+			err := sendNotForwarded(ue, tt.accessType, tt.payload, tt.pduSessionID)
+			if err != nil {
+				t.Logf("sendNotForwarded returned error (ignored in this test): %v", err)
+			}
+
+			if calls != tt.wantCalls {
+				t.Errorf("expected %d calls; got %d", tt.wantCalls, calls)
+			}
+
+			if tt.wantCalls > 0 {
+				if got.an != tt.accessType || got.id != tt.pduSessionID || got.cause != nasMessage.Cause5GMMPayloadWasNotForwarded {
+					t.Errorf("unexpected args: an=%v id=%d cause=%d; want an=%v id=%d cause=%d",
+						got.an, got.id, got.cause, tt.accessType, tt.pduSessionID, nasMessage.Cause5GMMPayloadWasNotForwarded)
+				}
+			}
+		})
+	}
+}
+
+func TestPickSnssai(t *testing.T) {
+	tests := []struct {
+		name        string
+		setupUL     func() *nasMessage.ULNASTransport
+		setupUE     func() *context.AmfUe
+		accessType  models.AccessType
+		expectedSst int32
+		expectedSd  string
+		expectError bool
+	}{
+		{
+			name: "SNSSAI from UL message",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				snssai := nasType.NewSNSSAI(nasMessage.PDUSessionEstablishmentAcceptSNSSAIType)
+				snssai.SetSST(1)
+				snssai.SetSD([3]uint8([]byte{0x11, 0x22, 0x33}))
+				ul.SNSSAI = snssai
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+				}
+			},
+			accessType:  models.ACCESSTYPE__3_GPP_ACCESS,
+			expectedSst: 1,
+			expectedSd:  "112233",
+			expectError: false,
+		},
+		{
+			name: "SNSSAI from AllowedNssai when UL SNSSAI is nil",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				// ul.SNSSAI is nil
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				ue := &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+				}
+				ue.AllowedNssai[models.ACCESSTYPE__3_GPP_ACCESS] = []models.AllowedSnssai{
+					{AllowedSnssai: models.Snssai{Sst: 2, Sd: openapi.PtrString("010203")}},
+				}
+				return ue
+			},
+			accessType:  models.ACCESSTYPE__3_GPP_ACCESS,
+			expectedSst: 2,
+			expectedSd:  "010203",
+			expectError: false,
+		},
+		{
+			name: "error when no SNSSAI in UL and no AllowedNssai",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				// ul.SNSSAI is nil
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+					// No AllowedNssai for the access type
+				}
+			},
+			accessType:  models.ACCESSTYPE__3_GPP_ACCESS,
+			expectError: true,
+		},
+		{
+			name: "SNSSAI from UL with different SD format",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				snssai := nasType.NewSNSSAI(nasMessage.PDUSessionEstablishmentAcceptSNSSAIType)
+				snssai.SetSST(5)
+				snssai.SetSD([3]uint8([]byte{0xab, 0xcd, 0xef}))
+				ul.SNSSAI = snssai
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+				}
+			},
+			accessType:  models.ACCESSTYPE__3_GPP_ACCESS,
+			expectedSst: 5,
+			expectedSd:  "abcdef",
+			expectError: false,
+		},
+		{
+			name: "AllowedNssai with multiple entries - picks first",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				// ul.SNSSAI is nil
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				ue := &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+				}
+				ue.AllowedNssai[models.ACCESSTYPE__3_GPP_ACCESS] = []models.AllowedSnssai{
+					{AllowedSnssai: models.Snssai{Sst: 3, Sd: openapi.PtrString("111111")}},
+					{AllowedSnssai: models.Snssai{Sst: 2, Sd: openapi.PtrString("222222")}},
+				}
+				return ue
+			},
+			accessType:  models.ACCESSTYPE__3_GPP_ACCESS,
+			expectedSst: 3,
+			expectedSd:  "111111",
+			expectError: false,
+		},
+		{
+			name: "NON_3GPP_ACCESS with AllowedNssai",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				// ul.SNSSAI is nil
+				return ul
+			},
+			setupUE: func() *context.AmfUe {
+				ue := &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+				}
+				ue.AllowedNssai[models.ACCESSTYPE_NON_3_GPP_ACCESS] = []models.AllowedSnssai{
+					{AllowedSnssai: models.Snssai{Sst: 3, Sd: openapi.PtrString("fedcba")}},
+				}
+				return ue
+			},
+			accessType:  models.ACCESSTYPE_NON_3_GPP_ACCESS,
+			expectedSst: 3,
+			expectedSd:  "fedcba",
+			expectError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ul := tt.setupUL()
+			ue := tt.setupUE()
+
+			got, err := pickSnssai(ul, ue, tt.accessType)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("unexpected error: %v", err)
+				return
+			}
+
+			if got.GetSst() != tt.expectedSst {
+				t.Errorf("expected SST %d, got %d", tt.expectedSst, got.GetSst())
+			}
+
+			if got.GetSd() != tt.expectedSd {
+				t.Errorf("expected SD %s, got %s", tt.expectedSd, got.GetSd())
+			}
+		})
+	}
+}
+
+func TestHandleRegistrationRequestInvalidSuci(t *testing.T) {
+	ue := &context.AmfUe{
+		GmmLog: zap.NewNop().Sugar(),
+		RanUe: map[models.AccessType]*context.RanUe{
+			models.ACCESSTYPE__3_GPP_ACCESS: {},
+		},
+		OnGoing: map[models.AccessType]*context.OnGoingProcedureWithPrio{
+			models.ACCESSTYPE__3_GPP_ACCESS: {},
+		},
+	}
+
+	registrationRequest := nasMessage.NewRegistrationRequest(0)
+	registrationRequest.SetRegistrationType5GS(nasMessage.RegistrationType5GSInitialRegistration)
+	registrationRequest.MobileIdentity5GS.SetLen(1)
+	registrationRequest.MobileIdentity5GS.Buffer = []byte{0x01}
+
+	err := HandleRegistrationRequest(ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS, 0, registrationRequest)
+	if err == nil {
+		t.Fatal("expected error for invalid SUCI")
+	}
+	if !strings.Contains(err.Error(), "decode SUCI failed") {
+		t.Fatalf("expected wrapped SUCI decode error, got %v", err)
+	}
+}
+
+func TestHandleIdentityResponseInvalidSuci(t *testing.T) {
+	ue := &context.AmfUe{
+		GmmLog: zap.NewNop().Sugar(),
+	}
+
+	identityResponse := nasMessage.NewIdentityResponse(0)
+	identityResponse.SetLen(1)
+	identityResponse.Buffer = []byte{0x01}
+
+	err := HandleIdentityResponse(ue, identityResponse)
+	if err == nil {
+		t.Fatal("expected error for invalid SUCI")
+	}
+	if !strings.Contains(err.Error(), "decode SUCI failed") {
+		t.Fatalf("expected wrapped SUCI decode error, got %v", err)
+	}
+}
+
+// TestHandleIdentityResponse5GSTmsiFullRange: a 5G-TMSI is a full 32-bit value
+// (TS 23.003 2.10.1), so values with the high bit set (>= 0x80000000) must be
+// accepted; parsing them as signed 32-bit rejected them as out of range.
+func TestHandleIdentityResponse5GSTmsiFullRange(t *testing.T) {
+	ue := &context.AmfUe{
+		GmmLog: zap.NewNop().Sugar(),
+	}
+
+	identityResponse := nasMessage.NewIdentityResponse(0)
+	identityResponse.SetLen(7)
+	// type octet, 2-byte AMF Set ID + Pointer, 4-byte 5G-TMSI with high bit set
+	identityResponse.Buffer = []byte{nasMessage.MobileIdentity5GSType5gSTmsi, 0x00, 0x01, 0xff, 0xff, 0xff, 0xff}
+
+	if err := HandleIdentityResponse(ue, identityResponse); err != nil {
+		t.Fatalf("HandleIdentityResponse with high-bit 5G-TMSI: unexpected error %v", err)
+	}
+	if got := uint32(ue.GetTmsi()); got != 0xffffffff {
+		t.Fatalf("stored 5G-TMSI = %#x, want 0xffffffff", got)
+	}
+}
+
+func TestPickDNN(t *testing.T) {
+	tests := []struct {
+		name     string
+		setupUE  func() *context.AmfUe
+		setupUL  func() *nasMessage.ULNASTransport
+		snssai   models.Snssai
+		expected string
+	}{
+		{
+			name: "picks first DNN from support list",
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:   &context.AMFContext{SupportDnnLists: []string{testDnn, "ims"}},
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")},
+			expected: testDnn,
+		},
+		{
+			name: "returns default 'internet' when support list is empty",
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:       zap.NewNop().Sugar(),
+					RanUe:        make(map[models.AccessType]*context.RanUe),
+					AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:   &context.AMFContext{SupportDnnLists: []string{}},
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")},
+			expected: "internet",
+		},
+		{
+			name: "picks default DNN from SmfSelectionData when available",
+			setupUE: func() *context.AmfUe {
+				sn := models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")}
+				key := util.SnssaiModelsToHex(sn)
+
+				smfSelectionData := models.NewSmfSelectionSubscriptionData()
+				subscribedSnssaiInfos := map[string]models.SnssaiInfo{
+					key: {
+						DnnInfos: []models.DnnInfo{
+							{Dnn: models.AccessAndMobilitySubscriptionDataSubscribedDnnListInner{String: openapi.PtrString("ims")}, DefaultDnnIndicator: openapi.PtrBool(true)},
+							{Dnn: models.AccessAndMobilitySubscriptionDataSubscribedDnnListInner{String: openapi.PtrString("internet-x")}, DefaultDnnIndicator: openapi.PtrBool(false)},
+						},
+					},
+				}
+				smfSelectionData.SetSubscribedSnssaiInfos(subscribedSnssaiInfos)
+
+				return &context.AmfUe{
+					GmmLog:           zap.NewNop().Sugar(),
+					RanUe:            make(map[models.AccessType]*context.RanUe),
+					AllowedNssai:     map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:       &context.AMFContext{SupportDnnLists: []string{testDnn}},
+					SmfSelectionData: smfSelectionData,
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")},
+			expected: "ims",
+		},
+		{
+			name: "falls back to support list when no default DNN indicator is true",
+			setupUE: func() *context.AmfUe {
+				sn := models.Snssai{Sst: 2, Sd: openapi.PtrString("aabbcc")}
+				key := util.SnssaiModelsToHex(sn)
+
+				smfSelectionData := models.NewSmfSelectionSubscriptionData()
+				subscribedSnssaiInfos := map[string]models.SnssaiInfo{
+					key: {
+						DnnInfos: []models.DnnInfo{
+							{Dnn: models.AccessAndMobilitySubscriptionDataSubscribedDnnListInner{String: openapi.PtrString("internet-x")}, DefaultDnnIndicator: openapi.PtrBool(false)},
+							{Dnn: models.AccessAndMobilitySubscriptionDataSubscribedDnnListInner{String: openapi.PtrString("internet-y")}, DefaultDnnIndicator: openapi.PtrBool(false)},
+						},
+					},
+				}
+				smfSelectionData.SetSubscribedSnssaiInfos(subscribedSnssaiInfos)
+
+				return &context.AmfUe{
+					GmmLog:           zap.NewNop().Sugar(),
+					RanUe:            make(map[models.AccessType]*context.RanUe),
+					AllowedNssai:     map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:       &context.AMFContext{SupportDnnLists: []string{"internet-2"}},
+					SmfSelectionData: smfSelectionData,
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 2, Sd: openapi.PtrString("aabbcc")},
+			expected: "internet-2",
+		},
+		{
+			name: "falls back to support list when SmfSelectionData has no matching SNSSAI",
+			setupUE: func() *context.AmfUe {
+				differentSn := models.Snssai{Sst: 99, Sd: openapi.PtrString("ffffff")}
+				differentKey := util.SnssaiModelsToHex(differentSn)
+
+				smfSelectionData := models.NewSmfSelectionSubscriptionData()
+				subscribedSnssaiInfos := map[string]models.SnssaiInfo{
+					differentKey: {
+						DnnInfos: []models.DnnInfo{
+							{Dnn: models.AccessAndMobilitySubscriptionDataSubscribedDnnListInner{String: openapi.PtrString("other-dnn")}, DefaultDnnIndicator: openapi.PtrBool(true)},
+						},
+					},
+				}
+				smfSelectionData.SetSubscribedSnssaiInfos(subscribedSnssaiInfos)
+
+				return &context.AmfUe{
+					GmmLog:           zap.NewNop().Sugar(),
+					RanUe:            make(map[models.AccessType]*context.RanUe),
+					AllowedNssai:     map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:       &context.AMFContext{SupportDnnLists: []string{"fallback-dnn"}},
+					SmfSelectionData: smfSelectionData,
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")},
+			expected: "fallback-dnn",
+		},
+		{
+			name: "handles nil SmfSelectionData",
+			setupUE: func() *context.AmfUe {
+				return &context.AmfUe{
+					GmmLog:           zap.NewNop().Sugar(),
+					RanUe:            make(map[models.AccessType]*context.RanUe),
+					AllowedNssai:     map[models.AccessType][]models.AllowedSnssai{},
+					ServingAMF:       &context.AMFContext{SupportDnnLists: []string{"test-dnn"}},
+					SmfSelectionData: nil,
+				}
+			},
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			snssai:   models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")},
+			expected: "test-dnn",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ue := tt.setupUE()
+			ul := tt.setupUL()
+
+			got := pickDNN(ul, ue, tt.snssai)
+
+			if got != tt.expected {
+				t.Errorf("pickDNN() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func Test_Transport5GSMMessage(t *testing.T) {
+	causeNotFwd := nasMessage.Cause5GMMPayloadWasNotForwarded
+
+	type tc struct {
+		name       string
+		setupUL    func() *nasMessage.ULNASTransport
+		an         models.AccessType
+		prepareUE  func(*context.AmfUe)
+		wantErrSub string
+		wantNilErr bool
+		wantCalls  int
+		wantCause  *uint8
+	}
+	tests := []tc{
+		{
+			name: "missing PDU ID: error, no DL",
+			setupUL: func() *nasMessage.ULNASTransport {
+				return &nasMessage.ULNASTransport{}
+			},
+			an:         models.ACCESSTYPE__3_GPP_ACCESS,
+			wantErrSub: "pdu session id is nil",
+			wantCalls:  0,
+		},
+		{
+			name: "old PDU ID (SSC mode 3): DL not forwarded + error",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(10)
+				oldPDUSessionID := nasType.NewOldPDUSessionID(nasMessage.ULNASTransportOldPDUSessionIDType)
+				oldPDUSessionID.SetOldPDUSessionID(9)
+				ul.OldPDUSessionID = oldPDUSessionID
+
+				return ul
+			},
+			an:         models.ACCESSTYPE__3_GPP_ACCESS,
+			wantErrSub: "ssc mode3 operation has not been implemented",
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+			},
+			wantCalls: 1, wantCause: &causeNotFwd,
+		},
+		{
+			name: "no SM context + RequestType=nil: no-op, nil error, no DL",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(1)
+				return ul
+			},
+			an: models.ACCESSTYPE_NON_3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+			},
+			wantNilErr: true, wantCalls: 0,
+		},
+		{
+			name: "emergency -> DL not forwarded: nil error",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(2)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeInitialEmergencyRequest)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+			},
+			wantNilErr: true, wantCalls: 1, wantCause: &causeNotFwd,
+		},
+		{
+			name: "existing PDU session but S-NSSAI not allowed: DL not forwarded",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(3)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeExistingPduSession)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+				sm := context.NewSmContext(3)
+				sm.SetAccessType(models.ACCESSTYPE__3_GPP_ACCESS)
+				ue.StoreSmContext(3, sm)
+			},
+			wantNilErr: true, wantCalls: 1, wantCause: &causeNotFwd,
+		},
+		{
+			name: "emergency but no RanUe: guarded (no DL), nil error",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(4)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeExistingEmergencyPduSession)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an:         models.ACCESSTYPE__3_GPP_ACCESS,
+			wantNilErr: true, wantCalls: 0,
+		},
+		{
+			name: "initial request with no allowed NSSAI: error, no DL",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(5)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeInitialRequest)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+			},
+			wantErrSub: "ue doesn't have allowedNssai",
+			wantCalls:  0,
+		},
+		{
+			name: "modification request with nil UeContextInSmfData: DL not forwarded",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(6)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeModificationRequest)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+				ue.UeContextInSmfData = nil
+			},
+			wantNilErr: true, wantCalls: 1, wantCause: &causeNotFwd,
+		},
+		{
+			name: "valid initial request with allowed NSSAI: success (skipped - needs SMF mock)",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(7)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeInitialRequest)
+				ul.RequestType = requestType
+
+				// Add SNSSAI to the UL message
+				snssai := nasType.NewSNSSAI(nasMessage.ULNASTransportSNSSAIType)
+				snssai.SetLen(4)
+				snssai.SetSST(1)
+				snssai.SetSD([3]uint8([]byte{0x11, 0x22, 0x33}))
+				ul.SNSSAI = snssai
+
+				// Add DNN (Data Network Name)
+				dnn := nasType.NewDNN(nasMessage.ULNASTransportDNNType)
+				dnn.SetLen(8)
+				dnn.SetDNN([]byte{0x08, 'i', 'n', 't', 'e', 'r', 'n', 'e', 't'})
+				ul.DNN = dnn
+
+				// Add PayloadContainer with some dummy SM NAS message
+				payloadContainer := nasType.PayloadContainer{}
+				payloadContainer.SetLen(4)
+				payloadContainer.SetPayloadContainerContents([]byte{0x01, 0x02, 0x03, 0x04})
+				ul.PayloadContainer = payloadContainer
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+
+				// Add allowed NSSAI to prevent error
+				ue.AllowedNssai[models.ACCESSTYPE__3_GPP_ACCESS] = []models.AllowedSnssai{
+					{AllowedSnssai: models.Snssai{Sst: 1, Sd: openapi.PtrString("112233")}},
+				}
+			},
+			wantNilErr: true,
+			wantCalls:  0,
+		},
+		{
+			name: "modification request with valid UeContextInSmfData: success",
+			setupUL: func() *nasMessage.ULNASTransport {
+				ul := &nasMessage.ULNASTransport{}
+				ul.PduSessionID2Value = nasType.NewPduSessionID2Value(nasMessage.ULNASTransportPduSessionID2ValueType)
+				ul.SetPduSessionID2Value(8)
+				requestType := nasType.NewRequestType(nasMessage.ULNASTransportRequestTypeType)
+				requestType.SetRequestTypeValue(nasMessage.ULNASTransportRequestTypeModificationRequest)
+				ul.RequestType = requestType
+
+				return ul
+			},
+			an: models.ACCESSTYPE__3_GPP_ACCESS,
+			prepareUE: func(ue *context.AmfUe) {
+				ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{AmfUe: ue}
+			},
+			wantNilErr: true,
+			wantCalls:  1,
+			wantCause:  &causeNotFwd,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if strings.Contains(tt.name, "skipped") {
+				t.Skip("skipping test that requires SMF mocking")
+			}
+			// Mock sendDLNASTransport only
+			origSendDL := sendDLNASTransport
+			defer func() { sendDLNASTransport = origSendDL }()
+			calls := 0
+			var got struct {
+				cause uint8
+				an    models.AccessType
+			}
+			sendDLNASTransport = func(_ *context.RanUe, an models.AccessType, _ uint8, _ []byte, _ int32, c uint8, _ *uint8, _ uint8) {
+				calls++
+				got.cause = c
+				got.an = an
+			}
+
+			ue := &context.AmfUe{
+				GmmLog:       zap.NewNop().Sugar(),
+				RanUe:        make(map[models.AccessType]*context.RanUe),
+				AllowedNssai: map[models.AccessType][]models.AllowedSnssai{},
+			}
+
+			if tt.prepareUE != nil {
+				tt.prepareUE(ue)
+			}
+
+			ul := tt.setupUL()
+
+			// Catch panics and convert them to errors
+			var err error
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						err = fmt.Errorf("panic occurred: %v", r)
+					}
+				}()
+				err = transport5GSMMessage(ctxt.Background(), ue, tt.an, ul)
+			}()
+
+			t.Logf("Error: %v, Calls: %d", err, calls)
+
+			if tt.wantNilErr && err != nil {
+				t.Errorf("got err=%v, want nil", err)
+			}
+			if tt.wantErrSub != "" {
+				if err == nil {
+					t.Errorf("got nil, want error containing %q", tt.wantErrSub)
+				}
+				if err != nil && !strings.Contains(err.Error(), tt.wantErrSub) {
+					t.Errorf("error %q does not contain %q", err, tt.wantErrSub)
+				}
+			}
+
+			if calls != tt.wantCalls {
+				t.Errorf("sendDLNASTransport calls=%d, want %d", calls, tt.wantCalls)
+			}
+			if tt.wantCause != nil && calls > 0 && got.cause != *tt.wantCause {
+				t.Errorf("DL cause=%d, want %d", got.cause, *tt.wantCause)
+			}
+			if calls > 0 && got.an != tt.an {
+				t.Errorf("DL anType=%v, want %v", got.an, tt.an)
+			}
+		})
+	}
+}
+
+// Fuzz test data structure
+type FuzzData struct {
+	AccessType                uint8
+	HasSubscribedNssai        bool
+	SubscribedNssaiLength     uint8
+	HasCapability5GMM         bool
+	HasAllowedNssai           bool
+	AllowedNssaiLength        uint8
+	ServingAmfChanged         bool
+	HasPei                    bool
+	PeiLength                 uint8
+	SubscriptionDataValid     bool
+	HasLastVisitedTAI         bool
+	HasMICOIndication         bool
+	HasRequestedDRXParameters bool
+	StateRegistered           bool
+	HasAmPolicyAssociation    bool
+	HasServAreaRes            bool
+	RestrictionType           uint8
+	MaxNumOfTAs               uint32
+	AreasLength               uint8
+	SupiLength                uint8
+	GutiLength                uint8
+	T3502ValueMs              uint32
+	T3512ValueMs              uint32
+	Non3gppDeregTimerValueMs  uint32
+	PcfUriLength              uint8
+	PcfIdLength               uint8
+}
+
+func FuzzHandleInitialRegistration(f *testing.F) {
+	// Add seed corpus
+	seedCases := [][]byte{
+		// Valid 3GPP registration
+		{
+			1, 1, 2, 1, 1, 1, 0, 1, 15, 1, 0, 0, 0, 0, 0, 0, 0,
+			10, 0, 0, 0, 1, 10, 16,
+			100, 0, 0, 0, 200, 0, 0, 0, 44, 1, 0, 0, 20, 16,
+		},
+		// Error case: no allowed NSSAI
+		{
+			1, 1, 1, 1, 0, 0, 0, 1, 12, 1, 0, 0, 0, 0, 0, 0, 0,
+			1, 0, 0, 0, 1, 15, 20,
+			200, 0, 0, 0, 144, 1, 0, 0, 88, 2, 0, 0, 15, 12,
+		},
+		// Minimal case
+		{
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0,
+			0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		},
+	}
+
+	for _, seed := range seedCases {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, data []byte) {
+		if len(data) < minFuzzDataSize { // Skip invalid inputs that don't contain enough data to parse FuzzData
+			return
+		}
+
+		// Parse fuzz data
+		fuzzData := parseFuzzData(data)
+
+		// Create real UE with fuzzed data
+		ue := newFuzzUE(fuzzData)
+
+		// Create context with timeout to prevent hanging
+		ctx, cancel := ctxt.WithTimeout(ctxt.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		// Determine access type
+		var anType models.AccessType
+		switch fuzzData.AccessType % 3 {
+		case 0:
+			anType = models.ACCESSTYPE__3_GPP_ACCESS
+		case 1:
+			anType = models.ACCESSTYPE_NON_3_GPP_ACCESS
+		default:
+			anType = models.ACCESSTYPE__3_GPP_ACCESS
+		}
+
+		// Track test execution
+		var (
+			err        error
+			panicked   bool
+			panicValue any
+		)
+
+		// Call the function under test with panic recovery
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					panicked = true
+					panicValue = r
+				}
+			}()
+
+			err = HandleInitialRegistration(ctx, ue, anType)
+		}()
+
+		// Validate results and behavior
+		validateFuzzResults(t, fuzzData, ue, anType, err, panicked, panicValue)
+	})
+}
+
+const (
+	// minFuzzDataSize represents the minimum number of bytes required to parse FuzzData
+	// Layout: 21 single-byte fields (bools converted to uint8, uint8 fields) + 4 uint32 fields (4 bytes each) = 21 + 16 = 37 bytes.
+	// We use 39 to provide a 2-byte safety margin for future extensibility or alignment.
+	minFuzzDataSize = 39
+	// Field layout documentation:
+	// Bytes 0-20:  21 single-byte fields (bools converted to uint8, uint8 fields)
+	// Bytes 21-24: MaxNumOfTAs (uint32)
+	// Bytes 25-28: T3502ValueMs (uint32)
+	// Bytes 29-32: T3512ValueMs (uint32)
+	// Bytes 33-36: Non3gppDeregTimerValueMs (uint32)
+	// Bytes 37-38: Reserved for future use (2-byte safety margin)
+)
+
+func parseFuzzData(data []byte) *FuzzData {
+	fd := &FuzzData{}
+
+	if len(data) >= minFuzzDataSize {
+		fd.AccessType = data[0]
+		fd.HasSubscribedNssai = data[1] != 0
+		fd.SubscribedNssaiLength = data[2] % 20
+		fd.HasCapability5GMM = data[3] != 0
+		fd.HasAllowedNssai = data[4] != 0
+		fd.AllowedNssaiLength = data[5] % 10
+		fd.ServingAmfChanged = data[6] != 0
+		fd.HasPei = data[7] != 0
+		fd.PeiLength = data[8] % 50
+		fd.SubscriptionDataValid = data[9] != 0
+		fd.HasLastVisitedTAI = data[10] != 0
+		fd.HasMICOIndication = data[11] != 0
+		fd.HasRequestedDRXParameters = data[12] != 0
+		fd.StateRegistered = data[13] != 0
+		fd.HasAmPolicyAssociation = data[14] != 0
+		fd.HasServAreaRes = data[15] != 0
+		fd.RestrictionType = data[16] % 3
+
+		fd.MaxNumOfTAs = parseUint32(data[17:21]) % 1000
+		fd.AreasLength = data[21] % 20
+		fd.SupiLength = data[22] % 100
+		fd.GutiLength = data[23] % 100
+		fd.T3502ValueMs = parseUint32(data[24:28]) % 60000
+		fd.T3512ValueMs = parseUint32(data[28:32]) % 3600000
+		fd.Non3gppDeregTimerValueMs = parseUint32(data[32:36]) % 3600000
+		fd.PcfUriLength = data[36] % 200
+		fd.PcfIdLength = data[37] % 100
+	}
+
+	return fd
+}
+
+func parseUint32(data []byte) uint32 {
+	if len(data) < 4 {
+		return 0
+	}
+	return binary.LittleEndian.Uint32(data[:4])
+}
+
+func generateString(prefix string, length int) string {
+	if length <= len(prefix) {
+		return prefix[:length]
+	}
+
+	result := prefix
+	for len(result) < length {
+		result += "X"
+	}
+	return result[:length]
+}
+
+func validateFuzzResults(t *testing.T, fd *FuzzData, ue *context.AmfUe, anType models.AccessType, err error, panicked bool, panicValue any) {
+	if panicked {
+		t.Logf("function panicked with: %v (AccessType: %v, HasAllowedNssai: %v)",
+			panicValue, anType, fd.HasAllowedNssai)
+	}
+
+	// Validate expected behaviors
+	if !fd.HasAllowedNssai || fd.AllowedNssaiLength == 0 {
+		// Should result in registration rejection
+		if err == nil && !panicked {
+			t.Logf("expected error for empty AllowedNssai but got none")
+		}
+	}
+
+	if err != nil {
+		t.Logf("function returned error: %v", err)
+
+		if !fd.HasAllowedNssai && !strings.Contains(err.Error(), "allowed") && !strings.Contains(err.Error(), "nssai") {
+			t.Logf("unexpected error for empty AllowedNssai: %v", err)
+		}
+	}
+
+	if ue.Supi != "" && len(ue.Supi) > 100 {
+		t.Logf("SUPI length seems excessive: %d", len(ue.Supi))
+	}
+}
+
+func BenchmarkHandleInitialRegistration(b *testing.B) {
+	scenarios := map[string]*FuzzData{
+		"Valid3GPP": {
+			AccessType:            1,
+			HasSubscribedNssai:    true,
+			SubscribedNssaiLength: 2,
+			HasCapability5GMM:     true,
+			HasAllowedNssai:       true,
+			AllowedNssaiLength:    1,
+			ServingAmfChanged:     false,
+			HasPei:                true,
+			PeiLength:             15,
+			SubscriptionDataValid: true,
+			SupiLength:            20,
+			GutiLength:            32,
+			T3502ValueMs:          1000,
+			T3512ValueMs:          3600000,
+			PcfUriLength:          30,
+			PcfIdLength:           16,
+		},
+		"NoAllowedNSSAI": {
+			AccessType:            1,
+			HasSubscribedNssai:    true,
+			SubscribedNssaiLength: 1,
+			HasCapability5GMM:     true,
+			HasAllowedNssai:       false, // This should cause rejection
+			AllowedNssaiLength:    0,
+			ServingAmfChanged:     false,
+			HasPei:                true,
+			PeiLength:             12,
+			SubscriptionDataValid: true,
+			SupiLength:            15,
+			GutiLength:            20,
+			T3502ValueMs:          200,
+			T3512ValueMs:          400,
+			PcfUriLength:          15,
+			PcfIdLength:           12,
+		},
+	}
+
+	for name, fuzzData := range scenarios {
+		b.Run(name, func(b *testing.B) {
+			ctx := ctxt.Background()
+			var errorCount, panicCount int
+
+			b.ResetTimer()
+
+			for b.Loop() {
+				ue := newFuzzUE(fuzzData)
+
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							panicCount++
+						}
+					}()
+					if err := HandleInitialRegistration(ctx, ue, models.ACCESSTYPE__3_GPP_ACCESS); err != nil {
+						errorCount++
+					}
+				}()
+			}
+
+			b.StopTimer()
+			if errorCount > 0 || panicCount > 0 {
+				b.Logf("Errors: %d, Panics: %d", errorCount, panicCount)
+			}
+		})
+	}
+}
+
+// TestHandleMobilityAndPeriodicRegistrationUpdatingNilBinaryDataN1Message verifies that a nil
+// (outer) or inner-nil BinaryDataN1Message (**os.File where *os.File == nil) does not cause a
+// panic, and that the handler returns the expected error when the PDU session is absent.
+func TestHandleMobilityAndPeriodicRegistrationUpdatingNilBinaryDataN1Message(t *testing.T) {
+	tests := []struct {
+		name      string
+		n1MsgFile **os.File
+	}{
+		{
+			name:      "outer nil pointer does not panic",
+			n1MsgFile: nil,
+		},
+		{
+			name:      "outer non-nil but inner nil pointer does not panic",
+			n1MsgFile: new(*os.File), // *new(*os.File) == nil
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			capability := nasType.NewCapability5GMM(nasMessage.RegistrationRequestCapability5GMMType)
+			capability.SetLen(13)
+
+			allowedPduSessionStatus := nasType.NewAllowedPDUSessionStatus(
+				nasMessage.RegistrationRequestAllowedPDUSessionStatusType)
+			allowedPduSessionStatus.SetLen(2)
+
+			ue := &context.AmfUe{
+				GmmLog:                zap.NewNop().Sugar(),
+				NASLog:                zap.NewNop().Sugar(),
+				RanUe:                 make(map[models.AccessType]*context.RanUe),
+				AllowedNssai:          make(map[models.AccessType][]models.AllowedSnssai),
+				OnGoing:               make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+				RegistrationArea:      make(map[models.AccessType][]models.Tai),
+				State:                 make(map[models.AccessType]*fsm.State),
+				ReleaseCause:          make(map[models.AccessType]*context.CauseAll),
+				SubscriptionDataValid: true,
+				Pei:                   testPei,
+				SubscribedNssai: []models.SubscribedSnssai{{
+					SubscribedSnssai:  models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+					DefaultIndication: openapi.PtrBool(true),
+				}},
+			}
+			ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+			ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+			ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+				Procedure: context.OnGoingProcedureNothing,
+			}
+			ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+				Procedure: context.OnGoingProcedureNothing,
+			}
+
+			ran := context.NewAmfRanDefault()
+			ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+			ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{
+				AmfUe: ue,
+				Ran:   ran,
+				Log:   zap.NewNop().Sugar(),
+				Tai:   models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"},
+			}
+			ue.Tai = ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS].Tai
+			ue.Location.SetNrLocation(models.NrLocation{})
+
+			ue.RegistrationRequest = &nasMessage.RegistrationRequest{
+				Capability5GMM:          capability,
+				AllowedPDUSessionStatus: allowedPduSessionStatus,
+			}
+
+			pduSessionId := int32(2)
+			snssai := models.NewSnssai(1)
+			snssai.SetSd("010203")
+			ue.N1N2Message = &context.N1N2Message{
+				Request: models.N1N2MessageTransferRequest{
+					JsonData: &models.N1N2MessageTransferReqData{
+						PduSessionId: &pduSessionId,
+						N2InfoContainer: &models.N2InfoContainer{
+							N2InformationClass: models.N2INFORMATIONCLASS_SM,
+							SmInfo: &models.N2SmInformation{
+								PduSessionId:  pduSessionId,
+								N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+								SNssai:        snssai,
+							},
+						},
+					},
+					BinaryDataN1Message:     tc.n1MsgFile,
+					BinaryDataN2Information: tempBinaryFile(t, "n2.bin", []byte{0x02}),
+				},
+			}
+
+			err := HandleMobilityAndPeriodicRegistrationUpdating(
+				ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS)
+			if err == nil {
+				t.Fatal("expected missing PDU session error")
+			}
+			if !strings.Contains(err.Error(), "pdu session id does not exist") {
+				t.Fatalf("expected \"pdu session id does not exist\", got %v", err)
+			}
+		})
+	}
+}
+
+// TestHandleServiceRequestNilBinaryDataN1Message verifies that a nil (outer) or inner-nil
+// BinaryDataN1Message (**os.File where *os.File == nil) does not cause a panic during
+// Mobile-Terminated service request handling, and that the handler returns the expected error
+// when the PDU session is absent.
+func TestHandleServiceRequestNilBinaryDataN1Message(t *testing.T) {
+	tests := []struct {
+		name      string
+		n1MsgFile **os.File
+	}{
+		{
+			name:      "outer nil pointer does not panic",
+			n1MsgFile: nil,
+		},
+		{
+			name:      "outer non-nil but inner nil pointer does not panic",
+			n1MsgFile: new(*os.File), // *new(*os.File) == nil
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ue := &context.AmfUe{
+				GmmLog:                   zap.NewNop().Sugar(),
+				NASLog:                   zap.NewNop().Sugar(),
+				RanUe:                    make(map[models.AccessType]*context.RanUe),
+				AllowedNssai:             make(map[models.AccessType][]models.AllowedSnssai),
+				OnGoing:                  make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+				RegistrationArea:         make(map[models.AccessType][]models.Tai),
+				State:                    make(map[models.AccessType]*fsm.State),
+				ReleaseCause:             make(map[models.AccessType]*context.CauseAll),
+				SubscriptionDataValid:    true,
+				SecurityContextAvailable: true,
+				Pei:                      testPei,
+			}
+			ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+			ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+			ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+				Procedure: context.OnGoingProcedureNothing,
+			}
+			ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+				Procedure: context.OnGoingProcedureNothing,
+			}
+			ue.NgKsi.Ksi = 1
+
+			ran := context.NewAmfRanDefault()
+			ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+			ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{
+				AmfUe: ue,
+				Ran:   ran,
+				Log:   zap.NewNop().Sugar(),
+				Tai:   models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"},
+			}
+			ue.Tai = ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS].Tai
+			ue.Location.SetNrLocation(models.NrLocation{})
+
+			serviceRequest := nasMessage.NewServiceRequest(0)
+			serviceRequest.SetServiceTypeValue(nasMessage.ServiceTypeMobileTerminatedServices)
+
+			pduSessionId := int32(2)
+			snssai := models.NewSnssai(1)
+			snssai.SetSd("010203")
+			ue.N1N2Message = &context.N1N2Message{
+				Request: models.N1N2MessageTransferRequest{
+					JsonData: &models.N1N2MessageTransferReqData{
+						PduSessionId: &pduSessionId,
+						N2InfoContainer: &models.N2InfoContainer{
+							N2InformationClass: models.N2INFORMATIONCLASS_SM,
+							SmInfo: &models.N2SmInformation{
+								PduSessionId:  pduSessionId,
+								N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+								SNssai:        snssai,
+							},
+						},
+					},
+					BinaryDataN1Message:     tc.n1MsgFile,
+					BinaryDataN2Information: tempBinaryFile(t, "srv-n2.bin", []byte{0x02}),
+				},
+			}
+
+			err := HandleServiceRequest(
+				ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS, serviceRequest)
+			if err == nil {
+				t.Fatal("expected missing PDU session error")
+			}
+			if !strings.Contains(err.Error(), "pduSessionId does not exist") {
+				t.Fatalf("expected \"pduSessionId does not exist\", got %v", err)
+			}
+		})
+	}
+}
+
+// newRegisteredUeForNilBinaryTests builds the minimum AmfUe needed to reach the
+// N1N2 binary-reading section inside HandleMobilityAndPeriodicRegistrationUpdating.
+func newRegisteredUeForNilBinaryTests(t *testing.T) (*context.AmfUe, *nasMessage.RegistrationRequest) {
+	t.Helper()
+
+	capability := nasType.NewCapability5GMM(nasMessage.RegistrationRequestCapability5GMMType)
+	capability.SetLen(13)
+	allowedPduSessionStatus := nasType.NewAllowedPDUSessionStatus(
+		nasMessage.RegistrationRequestAllowedPDUSessionStatusType)
+	allowedPduSessionStatus.SetLen(2)
+
+	ue := &context.AmfUe{
+		GmmLog:                zap.NewNop().Sugar(),
+		NASLog:                zap.NewNop().Sugar(),
+		RanUe:                 make(map[models.AccessType]*context.RanUe),
+		AllowedNssai:          make(map[models.AccessType][]models.AllowedSnssai),
+		OnGoing:               make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+		RegistrationArea:      make(map[models.AccessType][]models.Tai),
+		State:                 make(map[models.AccessType]*fsm.State),
+		ReleaseCause:          make(map[models.AccessType]*context.CauseAll),
+		SubscriptionDataValid: true,
+		Pei:                   testPei,
+		SubscribedNssai: []models.SubscribedSnssai{{
+			SubscribedSnssai:  models.Snssai{Sst: 1, Sd: openapi.PtrString("010203")},
+			DefaultIndication: openapi.PtrBool(true),
+		}},
+	}
+	ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+	ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+		Procedure: context.OnGoingProcedureNothing,
+	}
+	ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+		Procedure: context.OnGoingProcedureNothing,
+	}
+
+	ran := context.NewAmfRanDefault()
+	ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{
+		AmfUe: ue,
+		Ran:   ran,
+		Log:   zap.NewNop().Sugar(),
+		Tai:   models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"},
+	}
+	ue.Tai = ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS].Tai
+	ue.Location.SetNrLocation(models.NrLocation{})
+
+	regReq := &nasMessage.RegistrationRequest{
+		Capability5GMM:          capability,
+		AllowedPDUSessionStatus: allowedPduSessionStatus,
+	}
+	return ue, regReq
+}
+
+// newMTServiceUeForNilBinaryTests builds the minimum AmfUe needed to reach the
+// N1N2 binary-reading section inside HandleServiceRequest for MobileTerminated.
+func newMTServiceUeForNilBinaryTests(t *testing.T) *context.AmfUe {
+	t.Helper()
+
+	ue := &context.AmfUe{
+		GmmLog:                   zap.NewNop().Sugar(),
+		NASLog:                   zap.NewNop().Sugar(),
+		RanUe:                    make(map[models.AccessType]*context.RanUe),
+		AllowedNssai:             make(map[models.AccessType][]models.AllowedSnssai),
+		OnGoing:                  make(map[models.AccessType]*context.OnGoingProcedureWithPrio),
+		RegistrationArea:         make(map[models.AccessType][]models.Tai),
+		State:                    make(map[models.AccessType]*fsm.State),
+		ReleaseCause:             make(map[models.AccessType]*context.CauseAll),
+		SubscriptionDataValid:    true,
+		SecurityContextAvailable: true,
+		Pei:                      testPei,
+	}
+	ue.State[models.ACCESSTYPE__3_GPP_ACCESS] = fsm.NewState(context.Registered)
+	ue.State[models.ACCESSTYPE_NON_3_GPP_ACCESS] = fsm.NewState(context.Deregistered)
+	ue.OnGoing[models.ACCESSTYPE__3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+		Procedure: context.OnGoingProcedureNothing,
+	}
+	ue.OnGoing[models.ACCESSTYPE_NON_3_GPP_ACCESS] = &context.OnGoingProcedureWithPrio{
+		Procedure: context.OnGoingProcedureNothing,
+	}
+	ue.NgKsi.Ksi = 1
+
+	ran := context.NewAmfRanDefault()
+	ran.AnType = models.ACCESSTYPE__3_GPP_ACCESS
+	ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS] = &context.RanUe{
+		AmfUe: ue,
+		Ran:   ran,
+		Log:   zap.NewNop().Sugar(),
+		Tai:   models.Tai{PlmnId: models.PlmnId{Mcc: "001", Mnc: "01"}, Tac: "000001"},
+	}
+	ue.Tai = ue.RanUe[models.ACCESSTYPE__3_GPP_ACCESS].Tai
+	ue.Location.SetNrLocation(models.NrLocation{})
+	return ue
+}
+
+// TestHandleMobilityAndPeriodicRegistrationUpdatingContainerBinaryMismatch verifies
+// that an explicit error is returned when a JSON N1/N2 container is present in the
+// N1N2MessageTransfer request but the corresponding binary part is absent, preventing
+// the handler from silently branching down the wrong code path (TS 29.518 §6.1.6.2.6).
+func TestHandleMobilityAndPeriodicRegistrationUpdatingContainerBinaryMismatch(t *testing.T) {
+	pduSessionId := int32(2)
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+
+	tests := []struct {
+		name       string
+		jsonData   *models.N1N2MessageTransferReqData
+		wantErrSub string
+	}{
+		{
+			name: "N1MessageContainer present but BinaryDataN1Message absent",
+			jsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &pduSessionId,
+				N1MessageContainer: models.NewN1MessageContainer(
+					models.N1MESSAGECLASS_SM,
+					models.RefToBinaryData{ContentId: "n1"},
+				),
+			},
+			wantErrSub: "N1MessageContainer present but BinaryDataN1Message is missing",
+		},
+		{
+			name: "N2InfoContainer present but BinaryDataN2Information absent",
+			jsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &pduSessionId,
+				N2InfoContainer: &models.N2InfoContainer{
+					N2InformationClass: models.N2INFORMATIONCLASS_SM,
+					SmInfo: &models.N2SmInformation{
+						PduSessionId:  pduSessionId,
+						N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+						SNssai:        snssai,
+					},
+				},
+			},
+			wantErrSub: "N2InfoContainer present but BinaryDataN2Information is missing",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ue, regReq := newRegisteredUeForNilBinaryTests(t)
+			ue.RegistrationRequest = regReq
+			ue.N1N2Message = &context.N1N2Message{
+				Request: models.N1N2MessageTransferRequest{
+					JsonData: tc.jsonData,
+					// BinaryDataN1Message and BinaryDataN2Information both absent (nil)
+				},
+			}
+
+			err := HandleMobilityAndPeriodicRegistrationUpdating(
+				ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS)
+			if err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSub) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErrSub, err.Error())
+			}
+		})
+	}
+}
+
+// TestHandleServiceRequestContainerBinaryMismatch verifies that an explicit error is
+// returned when a JSON N1/N2 container is present in the N1N2MessageTransfer request
+// but the corresponding binary part is absent during Mobile-Terminated service request
+// handling (TS 29.518 §6.1.6.2.6).
+func TestHandleServiceRequestContainerBinaryMismatch(t *testing.T) {
+	pduSessionId := int32(2)
+	snssai := models.NewSnssai(1)
+	snssai.SetSd("010203")
+
+	tests := []struct {
+		name       string
+		jsonData   *models.N1N2MessageTransferReqData
+		wantErrSub string
+	}{
+		{
+			name: "N1MessageContainer present but BinaryDataN1Message absent",
+			jsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &pduSessionId,
+				N1MessageContainer: models.NewN1MessageContainer(
+					models.N1MESSAGECLASS_SM,
+					models.RefToBinaryData{ContentId: "n1"},
+				),
+			},
+			wantErrSub: "N1MessageContainer present but BinaryDataN1Message is missing",
+		},
+		{
+			name: "N2InfoContainer present but BinaryDataN2Information absent",
+			jsonData: &models.N1N2MessageTransferReqData{
+				PduSessionId: &pduSessionId,
+				N2InfoContainer: &models.N2InfoContainer{
+					N2InformationClass: models.N2INFORMATIONCLASS_SM,
+					SmInfo: &models.N2SmInformation{
+						PduSessionId:  pduSessionId,
+						N2InfoContent: &models.N2InfoContent{NgapIeType: models.NGAPIETYPE_PDU_RES_SETUP_REQ.Ptr()},
+						SNssai:        snssai,
+					},
+				},
+			},
+			wantErrSub: "N2InfoContainer present but BinaryDataN2Information is missing",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ue := newMTServiceUeForNilBinaryTests(t)
+			ue.N1N2Message = &context.N1N2Message{
+				Request: models.N1N2MessageTransferRequest{
+					JsonData: tc.jsonData,
+					// BinaryDataN1Message and BinaryDataN2Information both absent (nil)
+				},
+			}
+
+			serviceRequest := nasMessage.NewServiceRequest(0)
+			serviceRequest.SetServiceTypeValue(nasMessage.ServiceTypeMobileTerminatedServices)
+
+			err := HandleServiceRequest(
+				ctxt.Background(), ue, models.ACCESSTYPE__3_GPP_ACCESS, serviceRequest)
+			if err == nil {
+				t.Fatal("expected a validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantErrSub) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErrSub, err.Error())
+			}
+		})
+	}
+}

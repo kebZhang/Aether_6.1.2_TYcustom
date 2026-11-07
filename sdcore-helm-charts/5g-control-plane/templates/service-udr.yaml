@@ -1,0 +1,23 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.udr.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: udr
+  labels:
+{{ tuple "udr" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  type: {{ .Values.config.udr.serviceType }}
+  selector:
+{{ tuple "udr" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.udr.prometheus "TCP" .Values.config.udr.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "sbi" .Values.config.udr.sbi "TCP" .Values.config.udr.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- end }}

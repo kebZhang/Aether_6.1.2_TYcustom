@@ -1,0 +1,73 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2024 Intel Corporation
+name: CI Pipeline
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  docker-build:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/docker-build.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
+    with:
+      branch_name: ${{ github.ref }}
+  hadolint:
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/hadolint.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
+    with:
+      branch_name: ${{ github.ref }}
+  license-check:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/license-check.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
+    with:
+      branch_name: ${{ github.ref }}
+  fossa-scan:
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/fossa-scan.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
+    with:
+      branch_name: ${{ github.ref }}
+  analysis:
+    if: github.repository_owner == 'omec-project'
+    permissions:
+      actions: read
+      artifact-metadata: read
+      attestations: read
+      checks: read
+      code-quality: read
+      contents: read
+      deployments: read
+      discussions: read
+      drives: read
+      id-token: write
+      issues: read
+      models: read
+      packages: read
+      pages: read
+      pull-requests: read
+      repository-projects: read
+      security-events: write
+      statuses: read
+      vulnerability-alerts: read
+    uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@c6f69e74f8ee9034dcc237ccbd719de59526aee5 # v0.0.30
+    with:
+      branch_name: ${{ github.ref }}

@@ -1,0 +1,82 @@
+{{/*
+# Copyright (c) 2022-present Intel Corporation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+{{- if .Values.config.upfadapter.deploy }}
+{{ tuple "upfadapter" . | include "5g-control-plane.service_account" }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: upf-adapter
+  labels:
+{{ tuple "upfadapter" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  replicas: 1
+  #serviceName: upfadapter-headless
+  selector:
+    matchLabels:
+{{ tuple "upfadapter" . | include "5g-control-plane.metadata_labels" | indent 6 }}
+  template:
+    metadata:
+      labels:
+{{ tuple "upfadapter" . | include "5g-control-plane.metadata_labels" | indent 8 }}
+    {{- if or .Values.config.upfadapter.podAnnotations .Values.mongodb.enabled }}
+      annotations:
+    {{- if .Values.mongodb.enabled }}
+        checksum/mongodb-credentials: {{ include "5g-control-plane.mongodbCredentialsChecksum" . | quote }}
+    {{- end }}
+    {{- with .Values.config.upfadapter.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- end }}
+    spec:
+    {{- tuple "upfadapter" . | include "5g-control-plane.pod_common" | trim | nindent 6 }}
+      containers:
+      - name: upfadapter
+        image: {{ .Values.images.repository }}{{ .Values.images.tags.upfadapter }}
+        imagePullPolicy: {{ .Values.images.pullPolicy }}
+      {{- if .Values.config.coreDump.enabled }}
+        securityContext:
+          runAsUser: 0
+      {{- end }}
+        stdin: true
+        tty: true
+        command: ["/opt/upf-adapter-run.sh"]
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        {{- tuple .Values.config.upfadapter.rest.port . | include "5g-control-plane.probes" | nindent 8 }}
+      {{- if .Values.resources.enabled }}
+        resources:
+{{ toYaml .Values.resources.upfadapter | indent 10 }}
+      {{- end }}
+        volumeMounts:
+        - name: nf-config
+          mountPath: /opt
+      {{- if .Values.config.coreDump.enabled }}
+        - name: coredump
+          mountPath: /tmp/coredump
+      {{- end }}
+      volumes:
+      - name: nf-config
+        {{- if .Values.mongodb.enabled }}
+        secret:
+          secretName: upf-adapter
+        {{- else }}
+        configMap:
+          name: upf-adapter
+        {{- end }}
+          defaultMode: 493
+    {{- if .Values.config.coreDump.enabled }}
+      - name: host-rootfs
+        hostPath:
+          path: /
+      - name: coredump
+        hostPath:
+          path: {{ .Values.config.coreDump.path }}
+    {{- end }}
+{{- end }}

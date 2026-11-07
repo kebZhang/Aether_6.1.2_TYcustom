@@ -1,0 +1,51 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+{{- if .Values.config.amf.deploy }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amf
+  labels:
+{{ tuple "amf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+{{- with .Values.config.amf.serviceAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+{{- end }}
+spec:
+  type: {{ .Values.config.amf.serviceType }}
+{{- if .Values.config.amf.ngapp.externalIp }}
+  externalIPs:
+    - {{ .Values.config.amf.ngapp.externalIp }}
+{{- end }}
+{{- if .Values.config.amf.ngapp.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.config.amf.ngapp.externalTrafficPolicy }}
+{{- end }}
+  selector:
+{{ tuple "amf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  ports:
+{{- tuple "prometheus-exporter" .Values.config.amf.prometheus "TCP" .Values.config.amf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "sbi" .Values.config.amf.sbi "TCP" .Values.config.amf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "ngapp" .Values.config.amf.ngapp "SCTP" .Values.config.amf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+{{- tuple "sctp-grpc" .Values.config.amf.sctp_grpc "TCP" .Values.config.amf.serviceType | include "5g-control-plane.service_port" | nindent 2 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: amf-headless
+  labels:
+{{ tuple "amf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+spec:
+  selector:
+{{ tuple "amf" . | include "5g-control-plane.metadata_labels" | indent 4 }}
+  clusterIP: None
+  ports:
+  - name: grpc
+    port: 9000
+    protocol: TCP
+{{- end }}

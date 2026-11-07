@@ -1,0 +1,41 @@
+# Copyright 2023-present Intel Corporation
+# Copyright 2022-present Open Networking Foundation
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+FROM golang:1.27.2-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61 AS builder
+
+WORKDIR $GOPATH/src/sctplb
+COPY . .
+ARG MAKEFLAGS
+RUN make all
+
+FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS sctplb
+
+# Build arguments for dynamic labels
+ARG VERSION=dev
+ARG VCS_URL=unknown
+ARG VCS_REF=unknown
+ARG BUILD_DATE=unknown
+
+LABEL org.opencontainers.image.source="${VCS_URL}" \
+    org.opencontainers.image.version="${VERSION}" \
+    org.opencontainers.image.created="${BUILD_DATE}" \
+    org.opencontainers.image.revision="${VCS_REF}" \
+    org.opencontainers.image.url="${VCS_URL}" \
+    org.opencontainers.image.title="sctplb" \
+    org.opencontainers.image.description="Aether 5G Core SCTPLB Network Function" \
+    org.opencontainers.image.authors="Aether SD-Core <dev@lists.aetherproject.org>" \
+    org.opencontainers.image.vendor="Aether Project" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.documentation="https://docs.sd-core.aetherproject.org/"
+
+ARG DEBUG_TOOLS
+
+RUN if [ "$DEBUG_TOOLS" = "true" ]; then \
+        apk add --no-cache vim nano strace net-tools curl netcat-openbsd bind-tools; \
+    fi
+
+# Copy executable
+COPY --from=builder /go/src/sctplb/bin/* /usr/local/bin/.

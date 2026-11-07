@@ -1,0 +1,85 @@
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package nasMessage_test
+
+import (
+	"bytes"
+	"reflect"
+	"testing"
+
+	"github.com/omec-project/nas/v2/logger"
+	"github.com/omec-project/nas/v2/nasMessage"
+	"github.com/omec-project/nas/v2/nasType"
+)
+
+type nasMessageSecurityProtected5GSNASMessageData struct {
+	inExtendedProtocolDiscriminator uint8
+	inSecurityHeader                uint8
+	inSpareHalfOctet                uint8
+	inMessageAuthenticationCode     nasType.MessageAuthenticationCode
+	inSequenceNumber                nasType.SequenceNumber
+	inPlain5GSNASMessage            nasType.Plain5GSNASMessage
+}
+
+var nasMessageSecurityProtected5GSNASMessageTable = []nasMessageSecurityProtected5GSNASMessageData{
+	{
+		inExtendedProtocolDiscriminator: nasMessage.Epd5GSMobilityManagementMessage,
+		inSecurityHeader:                0x01,
+		inSpareHalfOctet:                0x01,
+		inMessageAuthenticationCode: nasType.MessageAuthenticationCode{
+			Octet: [4]uint8{0x01, 0x01, 0x01, 0x01},
+		},
+		inSequenceNumber: nasType.SequenceNumber{
+			Octet: 0x01,
+		},
+		inPlain5GSNASMessage: nasType.Plain5GSNASMessage{},
+	},
+}
+
+func TestNasTypeNewSecurityProtected5GSNASMessage(t *testing.T) {
+	a := nasMessage.NewSecurityProtected5GSNASMessage(0)
+	if a == nil {
+		t.Fatal("Expected value not to be nil")
+	}
+}
+
+func TestNasTypeNewSecurityProtected5GSNASMessageMessage(t *testing.T) {
+	for i, table := range nasMessageSecurityProtected5GSNASMessageTable {
+		t.Logf("Test Cnt:%d", i)
+		a := nasMessage.NewSecurityProtected5GSNASMessage(0)
+		b := nasMessage.NewSecurityProtected5GSNASMessage(0)
+		if a == nil {
+			t.Fatal("Expected value not to be nil")
+		}
+		if b == nil {
+			t.Fatal("Expected value not to be nil")
+		}
+
+		a.SetExtendedProtocolDiscriminator(table.inExtendedProtocolDiscriminator)
+		a.SetSecurityHeaderType(table.inSecurityHeader)
+		a.SetSpareHalfOctet(table.inSpareHalfOctet)
+
+		a.MessageAuthenticationCode = table.inMessageAuthenticationCode
+		a.SequenceNumber = table.inSequenceNumber
+		a.Plain5GSNASMessage = table.inPlain5GSNASMessage
+
+		buff := new(bytes.Buffer)
+		a.EncodeSecurityProtected5GSNASMessage(buff)
+		logger.NasMsgLog.Debugln("Encode: ", a)
+
+		data := make([]byte, buff.Len())
+		if _, err := buff.Read(data); err != nil {
+			t.Fatal(err)
+		}
+		logger.NasMsgLog.Debugln(data)
+		b.DecodeSecurityProtected5GSNASMessage(&data)
+		logger.NasMsgLog.Debugln("Decode: ", b)
+
+		if reflect.DeepEqual(a, b) != true {
+			t.Errorf("Not correct")
+		}
+	}
+}

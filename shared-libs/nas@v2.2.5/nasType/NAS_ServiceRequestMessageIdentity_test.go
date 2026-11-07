@@ -1,0 +1,67 @@
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package nasType_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/omec-project/nas/v2/nasType"
+)
+
+func TestNasTypeNewServiceRequestMessageIdentity(t *testing.T) {
+	a := nasType.NewServiceRequestMessageIdentity()
+	if a == nil {
+		t.Fatal("Expected value not to be nil")
+	}
+}
+
+type nasTypeServiceRequestMessageIdentity struct {
+	in  uint8
+	out uint8
+}
+
+var nasTypeServiceRequestMessageIdentityTable = []nasTypeServiceRequestMessageIdentity{
+	{0x03, 0x03},
+}
+
+func TestNasTypeServiceRequestMessageIdentityGetSetMessageType(t *testing.T) {
+	a := nasType.NewServiceRequestMessageIdentity()
+	for _, table := range nasTypeServiceRequestMessageIdentityTable {
+		a.SetMessageType(table.in)
+		if !reflect.DeepEqual(table.out, a.GetMessageType()) {
+			t.Errorf("Not equal: expected %v, got %v", table.out, a.GetMessageType())
+		}
+	}
+}
+
+type ServiceRequestMessageIdentityTestDataTemplate struct {
+	in  nasType.ServiceRequestMessageIdentity
+	out nasType.ServiceRequestMessageIdentity
+}
+
+var ServiceRequestMessageIdentityTestData = []nasType.ServiceRequestMessageIdentity{
+	{0x03},
+}
+
+var ServiceRequestMessageIdentityExpectedTestData = []nasType.ServiceRequestMessageIdentity{
+	{0x03},
+}
+
+var ServiceRequestMessageIdentityTable = []ServiceRequestMessageIdentityTestDataTemplate{
+	{ServiceRequestMessageIdentityTestData[0], ServiceRequestMessageIdentityExpectedTestData[0]},
+}
+
+func TestNasTypeServiceRequestMessageIdentity(t *testing.T) {
+	for _, table := range ServiceRequestMessageIdentityTable {
+		a := nasType.NewServiceRequestMessageIdentity()
+
+		a.SetMessageType(table.in.GetMessageType())
+		if !reflect.DeepEqual(table.out.GetMessageType(), a.GetMessageType()) {
+			t.Errorf("Not equal: expected %v, got %v", table.out.GetMessageType(), a.GetMessageType())
+		}
+	}
+}

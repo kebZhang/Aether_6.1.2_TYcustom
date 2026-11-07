@@ -1,0 +1,164 @@
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package service
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"sync"
+	"syscall"
+
+	nssfContext "github.com/omec-project/nssf/context"
+	"github.com/omec-project/nssf/factory"
+	"github.com/omec-project/nssf/logger"
+	"github.com/omec-project/nssf/metrics"
+	"github.com/omec-project/nssf/nfregistration"
+	"github.com/omec-project/nssf/nssaiavailability"
+	"github.com/omec-project/nssf/nsselection"
+	"github.com/omec-project/nssf/polling"
+	openapiLogger "github.com/omec-project/openapi/v2/logger"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/util/http2_util"
+	utilLogger "github.com/omec-project/util/logger"
+	"github.com/urfave/cli/v3"
+)
+
+type NSSF struct{}
+
+type (
+	// Config information.
+	Config struct {
+		cfg string
+	}
+)
+
+var config Config
+
+var nssfCLi = []cli.Flag{
+	&cli.StringFlag{
+		Name:     "cfg",
+		Usage:    "nssf config file",
+		Required: true,
+	},
+}
+
+func (*NSSF) GetCliCmd() (flags []cli.Flag) {
+	return nssfCLi
+}
+
+func (nssf *NSSF) Initialize(c *cli.Command) error {
+	config = Config{
+		cfg: c.String("cfg"),
+	}
+
+	absPath, err := filepath.Abs(config.cfg)
+	if err != nil {
+		logger.CfgLog.Errorln(err)
+		return err
+	}
+
+	if err := factory.InitConfigFactory(absPath); err != nil {
+		return err
+	}
+
+	nssf.setLogLevel()
+
+	if err := factory.CheckConfigVersion(); err != nil {
+		return err
+	}
+
+	factory.NssfConfig.CfgLocation = absPath
+
+	factory.Configured = true
+	nssfContext.InitNssfContext()
+	return nil
+}
+
+func (nssf *NSSF) setLogLevel() {
+	cfgLogger := factory.NssfConfig.Logger
+	if cfgLogger == nil {
+		logger.InitLog.Warnln("NSSF config without log level setting")
+		return
+	}
+
+	utilLogger.ApplyLogSetting("NSSF", cfgLogger.NSSF, logger.InitLog, logger.SetLogLevel)
+	utilLogger.ApplyLogSetting("OpenApi", cfgLogger.OpenApi, openapiLogger.OpenapiLog, openapiLogger.SetLogLevel)
+	utilLogger.ApplyLogSetting("Util", cfgLogger.Util, utilLogger.UtilLog, utilLogger.SetLogLevel)
+}
+
+func (nssf *NSSF) Start() {
+	logger.InitLog.Infoln("server started")
+
+	router := utilLogger.NewGinWithZap(logger.GinLog)
+
+	nssaiavailability.AddService(router)
+	nsselection.AddService(router)
+
+	go metrics.InitMetrics()
+
+	self := nssfContext.NSSF_Self()
+	addr := fmt.Sprintf("%s:%d", self.BindingIPv4, self.SBIPort)
+
+	plmnConfigChan := make(chan []models.PlmnId, 1)
+	ctx, cancelServices := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		polling.StartPollingService(ctx, factory.NssfConfig.Configuration.WebuiUri, plmnConfigChan)
+	}()
+	go func() {
+		defer wg.Done()
+		nfregistration.StartNfRegistrationService(ctx, plmnConfigChan)
+	}()
+
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-signalChannel
+		nssf.Terminate(cancelServices, &wg)
+		os.Exit(0)
+	}()
+
+	sslLog := filepath.Dir(factory.NssfConfig.CfgLocation) + "/sslkey.log"
+	server, err := http2_util.NewServer(addr, sslLog, router)
+
+	if server == nil {
+		logger.InitLog.Errorf("initialize HTTP server failed: %+v", err)
+		return
+	}
+
+	if err != nil {
+		logger.InitLog.Warnf("initialize HTTP server: +%v", err)
+	}
+
+	serverScheme := factory.NssfConfig.Configuration.Sbi.Scheme
+	switch serverScheme {
+	case "http":
+		err = server.ListenAndServe()
+	case "https":
+		err = server.ListenAndServeTLS(self.PEM, self.Key)
+	default:
+		logger.InitLog.Fatalf("HTTP server setup failed: invalid server scheme %+v", serverScheme)
+		return
+	}
+
+	if err != nil {
+		logger.InitLog.Fatalf("HTTP server setup failed: %+v", err)
+	}
+}
+
+func (nssf *NSSF) Terminate(cancelServices context.CancelFunc, wg *sync.WaitGroup) {
+	logger.InitLog.Infoln("terminating NSSF")
+	cancelServices()
+	nfregistration.DeregisterNF()
+	wg.Wait()
+	logger.InitLog.Infoln("NSSF terminated")
+}

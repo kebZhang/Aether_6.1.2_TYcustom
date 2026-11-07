@@ -1,0 +1,14 @@
+---
+# Copyright 2018 Intel Corporation
+# Copyright 2018-present Open Networking Foundation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v1
+description: OMEC control plane services
+name: omec-control-plane
+icon: https://guide.opencord.org/logos/cord.svg
+
+# Set when the chart is published, from the VERSION file at the repository
+# root (see the README); not edited by hand.
+version: 0.0.0

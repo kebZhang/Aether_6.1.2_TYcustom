@@ -1,0 +1,4046 @@
+# Copyright (C) 2026 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+################################################################################
+# NOTE: Spec is too big that we had to remove the 'components' section to be
+#       able to push it to GitHub
+################################################################################
+openapi: 3.0.0
+info:
+  description: |
+    AMF Communication Service.
+    © 2024, 3GPP Organizational Partners (ARIB, ATIS, CCSA, ETSI, TSDSI, TTA, TTC).
+    All rights reserved.
+  title: Namf_Communication
+  version: 1.3.0-alpha.6
+externalDocs:
+  description: 3GPP TS 29.518 V18.5.0; 5G System; Access and Mobility Management Services
+  url: https://www.3gpp.org/ftp/Specs/archive/29_series/29.518/
+servers:
+  - url: "{apiRoot}/namf-comm/v1"
+    variables:
+      apiRoot:
+        default: https://example.com
+        description: apiRoot as defined in clause 4.4 of 3GPP TS 29.501
+security:
+  - {}
+  - oAuth2ClientCredentials:
+      - namf-comm
+paths:
+  /ue-contexts/{ueContextId}:
+    put:
+      callbacks:
+        onN2MessageNotify:
+          '{$request.body#/n2NotifyUri}':
+            post:
+              operationId: N2InfoNotifyHandoverComplete
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/N2InformationNotification"
+                description: UE Specific N2 Information Notification
+              responses:
+                "200":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/N2InfoNotificationRspData"
+                    multipart/related:
+                      encoding:
+                        jsonData:
+                          contentType: application/json
+                          style: form
+                        binaryDataN2InformationExt1:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt2:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt3:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt4:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt5:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt6:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt7:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt8:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt9:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt10:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt11:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt12:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt13:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt14:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt15:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                        binaryDataN2InformationExt16:
+                          contentType: application/vnd.3gpp.ngap
+                          headers:
+                            Content-Id:
+                              explode: false
+                              schema:
+                                type: string
+                              style: simple
+                          style: form
+                      schema:
+                        $ref: "#/components/schemas/N2InfoNotifyHandoverComplete_200_response"
+                  description: N2 Information Notification Response.
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Namf_Communication N2 Info Notify (UE Specific) service Operation
+              tags:
+                - N2 Info Notify
+              x-callback-request: true
+      operationId: CreateUEContext
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataN2Information:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt1:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt2:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt3:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt4:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt5:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt6:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt7:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt8:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt9:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt10:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt11:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt12:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt13:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt14:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt15:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt16:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt17:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/CreateUEContext_request"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextCreatedData"
+            multipart/related:
+              encoding:
+                jsonData:
+                  contentType: application/json
+                  style: form
+                binaryDataN2Information:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt1:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt2:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt3:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt4:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt5:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt6:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt7:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt8:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt9:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt10:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt11:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt12:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt13:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt14:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt15:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+              schema:
+                $ref: "#/components/schemas/CreateUEContext_201_response"
+          description: UE context successfully created.
+          headers:
+            Location:
+              description: |
+                Contains the URI of the newly created resource, according to the structure: {apiRoot}/namf-comm/<apiVersion>/ue-contexts/{ueContextId}
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+            "3gpp-Sbi-Producer-Id":
+              description: |
+                Indicating the AMF serving the UE Context. This header shall be included when the UE Context is created in a target AMF other than the initial AMF sending the response.
+              explode: false
+              schema:
+                type: string
+              style: simple
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextCreateError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextCreateError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+            multipart/related:
+              encoding:
+                jsonData:
+                  contentType: application/json
+                  style: form
+                binaryDataN2Information:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+              schema:
+                $ref: "#/components/schemas/CreateUEContext_403_response"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextCreateError"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication CreateUEContext service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/release:
+    post:
+      operationId: ReleaseUEContext
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UEContextRelease"
+        required: true
+      responses:
+        "204":
+          description: UE Context successfully released
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication ReleaseUEContext service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/assign-ebi:
+    post:
+      operationId: EBIAssignment
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssignEbiData"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedEbiData"
+          description: EBI Assignment successfully performed.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignEbiError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignEbiError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignEbiError"
+          description: Conflict
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignEbiError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:assign-ebi
+      summary: Namf_Communication EBI Assignment service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/transfer:
+    post:
+      operationId: UEContextTransfer
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UeContextTransferReqData"
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataN1Message:
+                contentType: application/vnd.3gpp.5gnas
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/UEContextTransfer_request"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextTransferRspData"
+            multipart/related:
+              encoding:
+                jsonData:
+                  contentType: application/json
+                  style: form
+                binaryDataN2Information:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt1:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2InformationExt2:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+              schema:
+                $ref: "#/components/schemas/UEContextTransfer_200_response"
+          description: UE context transfer successfully initiated.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication UEContextTransfer service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/transfer-update:
+    post:
+      operationId: RegistrationStatusUpdate
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UeRegStatusUpdateReqData"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeRegStatusUpdateRspData"
+          description: UE context transfer status successfully updated.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Generic Error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication RegistrationStatusUpdate service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/relocate:
+    post:
+      operationId: RelocateUEContext
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataForwardRelocationRequest:
+                contentType: application/vnd.3gpp.gtpc
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2Information:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt1:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt2:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt3:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt4:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt5:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt6:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt7:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt8:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt9:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt10:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt11:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt12:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt13:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt14:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt15:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2InformationExt16:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/RelocateUEContext_request"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeContextRelocatedData"
+          description: UE context successfully relocated.
+          headers:
+            Location:
+              description: "Contains the URI of the newly created resource, according to the structure: {apiRoot}/namf-comm/<apiVersion>/ue-contexts/{ueContextId}/relocate"
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication RelocateUEContext service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/cancel-relocate:
+    post:
+      operationId: CancelRelocateUEContext
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(5g-guti-[0-9]{5,6}[0-9a-fA-F]{14}|imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataGtpcMessage:
+                contentType: application/vnd.3gpp.gtpc
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/CancelRelocateUEContext_request"
+        required: true
+      responses:
+        "204":
+          description: UE Context successfully released
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:ue-contexts:mobility
+      summary: Namf_Communication CancelRelocateUEContext service Operation
+      tags:
+        - Individual ueContext (Document)
+  /ue-contexts/{ueContextId}/n1-n2-messages:
+    post:
+      callbacks:
+        onN1N2TransferFailure:
+          '{$request.body#/n1n2FailureTxfNotifURI}':
+            post:
+              operationId: N1N2TransferFailureNotification
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/N1N2MsgTxfrFailureNotification"
+                description: N1N2Transfer Failure Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Namf_Communication N1N2Transfer Failure Notification service Operation
+              tags:
+                - N1N2 Transfer Failure Notification
+              x-callback-request: true
+      operationId: N1N2MessageTransfer
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|cid-.{1,255}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/N1N2MessageTransferReqData"
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataN1Message:
+                contentType: application/vnd.3gpp.5gnas
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryDataN2Information:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+              binaryMtData:
+                contentType: application/vnd.3gpp.5gnas
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/N1N2MessageTransfer_request"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N1N2MessageTransferRspData"
+          description: N1N2 Message Transfer accepted.
+          headers:
+            Location:
+              description: |
+                The URI of the resource located on the AMF In this release, the URI shall only be used by NF Service Consumer to correlate the possible N1/N2 Message Transfer Failure Notification With the related N1/N2 Message Transfer Operation. The NF service consumer shall not send any service requests towards the URI received in the Location header.
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N1N2MessageTransferRspData"
+          description: N1N2 Message Transfer successfully initiated.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "409":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N1N2MessageTransferError"
+          description: Conflicts
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        "504":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N1N2MessageTransferError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Gateway Timeout
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:n1-n2-messages
+      summary: Namf_Communication N1N2 Message Transfer (UE Specific) service Operation
+      tags:
+        - n1N2Message collection (Collection)
+  /ue-contexts/{ueContextId}/n1-n2-messages/subscriptions:
+    post:
+      callbacks:
+        onN1N2MessageNotify:
+          '{$request.body#/n1NotifyCallbackUri}':
+            post:
+              operationId: N1MessageNotify
+              requestBody:
+                content:
+                  multipart/related:
+                    encoding:
+                      jsonData:
+                        contentType: application/json
+                        style: form
+                      binaryDataN1Message:
+                        contentType: application/vnd.3gpp.5gnas
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                    schema:
+                      $ref: "#/components/schemas/N1MessageNotify_request"
+                description: N1 Message Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Namf_Communication N1 Message Notify service Operation
+              tags:
+                - N1 Message Notify
+              x-callback-request: true
+          '{$request.body#/n2NotifyCallbackUri}':
+            post:
+              operationId: N2InfoNotify
+              requestBody:
+                content:
+                  multipart/related:
+                    encoding:
+                      jsonData:
+                        contentType: application/json
+                        style: form
+                      binaryDataN1Message:
+                        contentType: application/vnd.3gpp.5gnas
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                    schema:
+                      $ref: "#/components/schemas/N2InfoNotify_request"
+                description: UE Specific N2 Information Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Namf_Communication N2 Info Notify (UE Specific) service Operation
+              tags:
+                - N2 Info Notify
+              x-callback-request: true
+      operationId: N1N2MessageSubscribe
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UeN1N2InfoSubscriptionCreateData"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UeN1N2InfoSubscriptionCreatedData"
+          description: N1N2 Message Subscription successfully created.
+          headers:
+            Location:
+              description: "Contains the URI of the newly created resource, according to the structure: {apiRoot}/namf-comm/<apiVersion>/ue-contexts/{ueContextId}/n1-n2-messages/subscriptions/{subscriptionId}"
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:n1-n2-messages
+      summary: Namf_Communication N1N2 Message Subscribe (UE Specific) service Operation
+      tags:
+        - N1N2 Subscriptions Collection for Individual UE Contexts (Collection)
+  /ue-contexts/{ueContextId}/n1-n2-messages/subscriptions/{subscriptionId}:
+    delete:
+      operationId: N1N2MessageUnSubscribe
+      parameters:
+        - description: UE Context Identifier
+          explode: false
+          in: path
+          name: ueContextId
+          required: true
+          schema:
+            pattern: "^(imsi-[0-9]{5,15}|nai-.+|gli-.+|gci-.+|imei-[0-9]{15}|imeisv-[0-9]{16}|.+)$"
+            type: string
+          style: simple
+        - description: Subscription Identifier
+          explode: false
+          in: path
+          name: subscriptionId
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        "204":
+          description: N1N2 Message Subscription successfully removed.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:n1-n2-messages
+      summary: Namf_Communication N1N2 Message UnSubscribe (UE Specific) service Operation
+      tags:
+        - N1N2 Individual Subscription (Document)
+  /non-ue-n2-messages/transfer:
+    post:
+      operationId: NonUeN2MessageTransfer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/N2InformationTransferReqData"
+          multipart/related:
+            encoding:
+              jsonData:
+                contentType: application/json
+                style: form
+              binaryDataN2Information:
+                contentType: application/vnd.3gpp.ngap
+                headers:
+                  Content-Id:
+                    explode: false
+                    schema:
+                      type: string
+                    style: simple
+                style: form
+            schema:
+              $ref: "#/components/schemas/NonUeN2MessageTransfer_request"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferRspData"
+            multipart/related:
+              encoding:
+                jsonData:
+                  contentType: application/json
+                  style: form
+                binaryDataN2Information1:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information2:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information3:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information4:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information5:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information6:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information7:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information8:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information9:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+                binaryDataN2Information10:
+                  contentType: application/vnd.3gpp.ngap
+                  headers:
+                    Content-Id:
+                      explode: false
+                      schema:
+                        type: string
+                      style: simple
+                  style: form
+              schema:
+                $ref: "#/components/schemas/NonUeN2MessageTransfer_200_response"
+          description: Non UE N2 Message Transfer successfully initiated.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferError"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/N2InformationTransferError"
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:non-ue-n2-messages
+      summary: Namf_Communication Non UE N2 Message Transfer service Operation
+      tags:
+        - Non UE N2Messages collection (Collection)
+  /non-ue-n2-messages/subscriptions:
+    post:
+      callbacks:
+        onN2InfoNotify:
+          '{$request.body#/n2NotifyCallbackUri}':
+            post:
+              operationId: NonUeN2InfoNotify
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/N2InformationNotification"
+                  multipart/related:
+                    encoding:
+                      jsonData:
+                        contentType: application/json
+                        style: form
+                      binaryDataN2Information1:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information2:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information3:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information4:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information5:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information6:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information7:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information8:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information9:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                      binaryDataN2Information10:
+                        contentType: application/vnd.3gpp.ngap
+                        headers:
+                          Content-Id:
+                            explode: false
+                            schema:
+                              type: string
+                            style: simple
+                        style: form
+                    schema:
+                      $ref: "#/components/schemas/NonUeN2InfoNotify_request"
+                description: Non UE N2 Information Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Namf_Communication Non UE N2 Info Notify service Operation
+              tags:
+                - Non UE N2 Info Notify
+              x-callback-request: true
+      operationId: NonUeN2InfoSubscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NonUeN2InfoSubscriptionCreateData"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NonUeN2InfoSubscriptionCreatedData"
+          description: Non UE N2 Info Subscription successfully created.
+          headers:
+            Location:
+              description: "Contains the URI of the newly created resource, according to the structure: {apiRoot}/namf-comm/<apiVersion>/non-ue-n2-messages/subscriptions/{n2NotifySubscriptionId}"
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:non-ue-n2-messages
+      summary: Namf_Communication Non UE N2 Info Subscribe service Operation
+      tags:
+        - Non UE N2Messages Subscriptions collection (Collection)
+  /non-ue-n2-messages/subscriptions/{n2NotifySubscriptionId}:
+    delete:
+      operationId: NonUeN2InfoUnSubscribe
+      parameters:
+        - description: N2 info Subscription Identifier
+          explode: false
+          in: path
+          name: n2NotifySubscriptionId
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        "204":
+          description: Non UE N2 INfo Subscription successfully removed.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+      security:
+        - {}
+        - oAuth2ClientCredentials:
+            - namf-comm
+        - oAuth2ClientCredentials:
+            - namf-comm
+            - namf-comm:non-ue-n2-messages
+      summary: Namf_Communication Non UE N2 Info UnSubscribe service Operation
+      tags:
+        - Non UE N2 Message Notification Individual Subscription (Document)
+  /subscriptions:
+    post:
+      callbacks:
+        onAmfStatusChange:
+          '{$request.body#/amfStatusUri}':
+            post:
+              operationId: AmfStatusChangeNotifyOnSubscriptionUpdate
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/AmfStatusChangeNotification"
+                description: Amf Status Change Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Amf Status Change Notify service Operation
+              tags:
+                - Amf Status Change Notify
+              x-callback-request: true
+      operationId: AMFStatusChangeSubscribe
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionDataAmf"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionDataAmf"
+          description: N1N2 Message Subscription successfully created.
+          headers:
+            Location:
+              description: "Contains the URI of the newly created resource, according to the structure: {apiRoot}/namf-comm/<apiVersion>/subscriptions/{subscriptionId}"
+              explode: false
+              required: true
+              schema:
+                type: string
+              style: simple
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      summary: Namf_Communication AMF Status Change Subscribe service Operation
+      tags:
+        - subscriptions collection (Collection)
+  /subscriptions/{subscriptionId}:
+    delete:
+      operationId: AMFStatusChangeUnSubscribe
+      parameters:
+        - description: AMF Status Change Subscription Identifier
+          explode: false
+          in: path
+          name: subscriptionId
+          required: true
+          schema:
+            type: string
+          style: simple
+      responses:
+        "204":
+          description: N1N2 Message Subscription successfully removed.
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      summary: Namf_Communication AMF Status Change UnSubscribe service Operation
+      tags:
+        - individual subscription (Document)
+    put:
+      callbacks:
+        OnAmfStatusChange:
+          '{$request.body#/amfStatusUri}':
+            post:
+              operationId: AmfStatusChangeNotify
+              requestBody:
+                content:
+                  application/json:
+                    schema:
+                      $ref: "#/components/schemas/AmfStatusChangeNotification"
+                description: Amf Status Change Notification
+              responses:
+                "204":
+                  description: Expected response to a successful callback processing
+                "307":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Temporary Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "308":
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/RedirectResponse"
+                  description: Permanent Redirect
+                  headers:
+                    Location:
+                      description: The URI pointing to the resource located on the redirect target
+                      required: true
+                      schema:
+                        type: string
+                    "3gpp-Sbi-Target-Nf-Id":
+                      description: |
+                        'Identifier of target NF (service) instance towards which the request is redirected'
+                      schema:
+                        type: string
+                "400":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad request
+                "401":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unauthorized
+                "403":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Forbidden
+                "404":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Not Found
+                "411":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Length Required
+                "413":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Content Too Large
+                "415":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Unsupported Media Type
+                "429":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Too Many Requests
+                "500":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Internal Server Error
+                "502":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Bad Gateway
+                "503":
+                  content:
+                    application/problem+json:
+                      schema:
+                        $ref: "#/components/schemas/ProblemDetails"
+                  description: Service Unavailable
+              summary: Amf Status Change Notify service Operation
+              tags:
+                - Amf Status Change Notify
+              x-callback-request: true
+      operationId: AMFStatusChangeSubscribeModify
+      parameters:
+        - description: AMF Status Change Subscription Identifier
+          explode: false
+          in: path
+          name: subscriptionId
+          required: true
+          schema:
+            type: string
+          style: simple
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscriptionDataAmf"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SubscriptionDataAmf"
+          description: Subscription modified successfully
+        "204":
+          description: Events subscription modification is accepted entirely
+        "307":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Temporary Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "308":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RedirectResponse"
+          description: Permanent Redirect
+          headers:
+            Location:
+              description: The URI pointing to the resource located on the redirect target
+              required: true
+              schema:
+                type: string
+            "3gpp-Sbi-Target-Nf-Id":
+              description: |
+                'Identifier of target NF (service) instance towards which the request is redirected'
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad request
+        "401":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unauthorized
+        "403":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Forbidden
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Not Found
+        "411":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Length Required
+        "413":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Content Too Large
+        "415":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Unsupported Media Type
+        "429":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Too Many Requests
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Internal Server Error
+        "502":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Bad Gateway
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
+          description: Service Unavailable
+        default:
+          description: Unexpected error
+      summary: Namf_Communication AMF Status Change Subscribe Modify service Operation
+      tags:
+        - individual subscription (Document)

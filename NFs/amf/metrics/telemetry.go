@@ -1,0 +1,218 @@
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+/*
+ * AMF Statistics exposing to promethus
+ *
+ */
+
+package metrics
+
+import (
+	"encoding/hex"
+	"io"
+	"net/http"
+	"unicode/utf8"
+
+	"github.com/omec-project/amf/logger"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+// AmfStats captures AMF level stats
+type AmfStats struct {
+	ngapMsg           *prometheus.CounterVec
+	gnbSessionProfile *prometheus.GaugeVec
+	dbWriteDropped    prometheus.Counter
+	unknownSmContext  *prometheus.CounterVec
+	ngapAssociations  prometheus.Gauge
+	ngapLastMessage   prometheus.Gauge
+}
+
+var amfStats *AmfStats
+
+func initAmfStats() *AmfStats {
+	return &AmfStats{
+		ngapMsg: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "ngap_messages_total",
+			Help: "ngap interface counters",
+		}, []string{"amf_id", "msg_type", "direction", "result", "reason"}),
+
+		gnbSessionProfile: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "gnb_session_profile",
+			Help: "gNB session Profile",
+		}, []string{"id", "ip", "state", "tac"}),
+
+		dbWriteDropped: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "amf_db_write_dropped_total",
+			Help: "Total number of UE context DB writes dropped due to a full write queue.",
+		}),
+
+		ngapAssociations: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "amf_ngap_associations",
+			Help: "Number of SCTP associations this AMF terminates itself. The listener is " +
+				"started in either mode, so in a deployment whose gNBs connect to the SCTP " +
+				"load balancer this AMF accepts none and the value stays zero: it counts " +
+				"what this process terminates, not what it serves.",
+		}),
+
+		ngapLastMessage: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "amf_ngap_last_message_timestamp_seconds",
+			Help: "Unix time of the last NGAP message this AMF received and decoded, or zero " +
+				"if it has received none. It advances at intake, before the message is " +
+				"handled, so a stalled handler behind a live intake still moves it. Exposed " +
+				"as a timestamp rather than an age so that staleness is computed at query time.",
+		}),
+
+		unknownSmContext: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "amf_ngap_unknown_sm_context_total",
+			Help: "PDU sessions named by a RAN message for which this AMF held no SM context. " +
+				"Counted per session rather than per message, because one message can name " +
+				"several and only some may be unresolvable. The label is 'message' rather " +
+				"than 'msg_type' on purpose: it carries the specific NGAP message, where " +
+				"ngap_messages_total's msg_type carries procedure names and cannot " +
+				"distinguish a UEContextReleaseComplete from a UEContextReleaseRequest.",
+		}, []string{"message"}),
+	}
+}
+
+func (ps *AmfStats) register() error {
+	prometheus.Unregister(ps.ngapMsg)
+
+	if err := prometheus.Register(ps.ngapMsg); err != nil {
+		return err
+	}
+	if err := prometheus.Register(ps.gnbSessionProfile); err != nil {
+		return err
+	}
+	prometheus.Unregister(ps.dbWriteDropped)
+	if err := prometheus.Register(ps.dbWriteDropped); err != nil {
+		return err
+	}
+	prometheus.Unregister(ps.ngapAssociations)
+	if err := prometheus.Register(ps.ngapAssociations); err != nil {
+		return err
+	}
+	prometheus.Unregister(ps.ngapLastMessage)
+	if err := prometheus.Register(ps.ngapLastMessage); err != nil {
+		return err
+	}
+	prometheus.Unregister(ps.unknownSmContext)
+	if err := prometheus.Register(ps.unknownSmContext); err != nil {
+		return err
+	}
+	return nil
+}
+
+func init() {
+	amfStats = initAmfStats()
+
+	if err := amfStats.register(); err != nil {
+		logger.AppLog.Errorln("AMF Stats register failed", err)
+	}
+}
+
+// HealthHandler answers a liveness probe from check, which reports whether the element
+// can serve and why not when it cannot. The check is passed in rather than read from here,
+// because the state it describes belongs to the NGAP layer and this package must stay
+// importable from it.
+func HealthHandler(check func() (bool, string)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		healthy, reason := check()
+
+		body := "ok: " + reason + "\n"
+		if !healthy {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			body = "unhealthy: " + reason + "\n"
+		}
+
+		if _, err := io.WriteString(w, body); err != nil {
+			logger.AppLog.Errorf("could not write health response: %v", err)
+		}
+	})
+}
+
+// RegisterHealth publishes the liveness endpoint on the same mux and port as /metrics, so
+// no new listener is involved.
+func RegisterHealth(check func() (bool, string)) {
+	http.Handle("/healthz", HealthHandler(check))
+}
+
+// InitMetrics initialises AMF stats
+func InitMetrics() {
+	http.Handle("/metrics", promhttp.Handler())
+	if err := http.ListenAndServe(":9089", nil); err != nil {
+		logger.InitLog.Errorf("could not open metrics port: %v", err)
+	}
+}
+
+// IncrementNgapMsgStats increments message level stats
+func IncrementNgapMsgStats(amfID, msgType, direction, result, reason string) {
+	amfID = sanitizeLabelValue(amfID)
+	msgType = sanitizeLabelValue(msgType)
+	direction = sanitizeLabelValue(direction)
+	result = sanitizeLabelValue(result)
+	reason = sanitizeLabelValue(reason)
+	amfStats.ngapMsg.WithLabelValues(amfID, msgType, direction, result, reason).Inc()
+}
+
+// sanitizeLabelValue ensures a string is valid UTF-8 for use as Prometheus label value
+func sanitizeLabelValue(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	// If not valid UTF-8, convert to hex representation with prefix
+	// to make it clear this is sanitized data
+	return "hex:" + hex.EncodeToString([]byte(s))
+}
+
+// SetGnbSessProfileStats maintains Session profile info
+func SetGnbSessProfileStats(id, ip, state, tac string, count uint64) {
+	id = sanitizeLabelValue(id)
+	ip = sanitizeLabelValue(ip)
+	state = sanitizeLabelValue(state)
+	tac = sanitizeLabelValue(tac)
+	amfStats.gnbSessionProfile.WithLabelValues(id, ip, state, tac).Set(float64(count))
+}
+
+// DeleteGnbSessProfileStats removes one series rather than giving it a value. A gauge that is
+// only ever Set holds its last sample once nothing writes it again, so a tracking area the gNB
+// has stopped broadcasting cannot be corrected by writing zero from a loop that no longer
+// visits it - the series has to go, because the condition it describes no longer exists.
+func DeleteGnbSessProfileStats(id, ip, state, tac string) {
+	id = sanitizeLabelValue(id)
+	ip = sanitizeLabelValue(ip)
+	state = sanitizeLabelValue(state)
+	tac = sanitizeLabelValue(tac)
+	amfStats.gnbSessionProfile.DeleteLabelValues(id, ip, state, tac)
+}
+
+// SetNgapAssociations records how many SCTP associations the AMF currently terminates.
+// An AMF that has lost every association is indistinguishable from an idle one in its
+// logs, which is what this makes visible from outside the pod.
+func SetNgapAssociations(count int) {
+	amfStats.ngapAssociations.Set(float64(count))
+}
+
+// SetNgapLastMessage records that an NGAP message has just been received and decoded.
+// Paired with the association count, a timestamp that stops advancing while the count is
+// non-zero is a different fault from the count going to zero, and the two are worth
+// telling apart.
+func SetNgapLastMessage() {
+	amfStats.ngapLastMessage.SetToCurrentTime()
+}
+
+// IncrementUnknownSmContext counts one PDU session that a RAN message named and this AMF could
+// not resolve to an SM context.
+func IncrementUnknownSmContext(message string) {
+	amfStats.unknownSmContext.WithLabelValues(sanitizeLabelValue(message)).Inc()
+}
+
+// IncrementDbWriteDropped increments the counter of UE context writes dropped
+// because the async write queue was full.
+func IncrementDbWriteDropped() {
+	amfStats.dbWriteDropped.Inc()
+}

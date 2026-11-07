@@ -1,0 +1,67 @@
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package nasType_test
+
+import (
+	"reflect"
+	"testing"
+
+	"github.com/omec-project/nas/v2/nasType"
+)
+
+func TestNasTypeNewSecurityModeRejectMessageIdentity(t *testing.T) {
+	a := nasType.NewSecurityModeRejectMessageIdentity()
+	if a == nil {
+		t.Fatal("Expected value not to be nil")
+	}
+}
+
+type nasTypeSecurityModeRejectMessageIdentity struct {
+	in  uint8
+	out uint8
+}
+
+var nasTypeSecurityModeRejectMessageIdentityTable = []nasTypeSecurityModeRejectMessageIdentity{
+	{0x03, 0x03},
+}
+
+func TestNasTypeSecurityModeRejectMessageIdentityGetSetMessageType(t *testing.T) {
+	a := nasType.NewSecurityModeRejectMessageIdentity()
+	for _, table := range nasTypeSecurityModeRejectMessageIdentityTable {
+		a.SetMessageType(table.in)
+		if !reflect.DeepEqual(table.out, a.GetMessageType()) {
+			t.Errorf("Not equal: expected %v, got %v", table.out, a.GetMessageType())
+		}
+	}
+}
+
+type SecurityModeRejectMessageIdentityTestDataTemplate struct {
+	in  nasType.SecurityModeRejectMessageIdentity
+	out nasType.SecurityModeRejectMessageIdentity
+}
+
+var SecurityModeRejectMessageIdentityTestData = []nasType.SecurityModeRejectMessageIdentity{
+	{0x03},
+}
+
+var SecurityModeRejectMessageIdentityExpectedTestData = []nasType.SecurityModeRejectMessageIdentity{
+	{0x03},
+}
+
+var SecurityModeRejectMessageIdentityTable = []SecurityModeRejectMessageIdentityTestDataTemplate{
+	{SecurityModeRejectMessageIdentityTestData[0], SecurityModeRejectMessageIdentityExpectedTestData[0]},
+}
+
+func TestNasTypeSecurityModeRejectMessageIdentity(t *testing.T) {
+	for _, table := range SecurityModeRejectMessageIdentityTable {
+		a := nasType.NewSecurityModeRejectMessageIdentity()
+
+		a.SetMessageType(table.in.GetMessageType())
+		if !reflect.DeepEqual(table.out.GetMessageType(), a.GetMessageType()) {
+			t.Errorf("Not equal: expected %v, got %v", table.out.GetMessageType(), a.GetMessageType())
+		}
+	}
+}

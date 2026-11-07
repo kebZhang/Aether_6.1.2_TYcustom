@@ -1,0 +1,101 @@
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package notifyevent
+
+import (
+	"fmt"
+	"sync"
+
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/pcf/logger"
+)
+
+// EventHandler defines the interface for handling events
+type EventHandler interface {
+	HandleEvent(eventName string, data any) error
+}
+
+// Dispatcher manages event handlers and dispatching
+type Dispatcher struct {
+	handlers map[string][]EventHandler
+	mu       sync.RWMutex
+}
+
+// NewDispatcher creates a new event dispatcher
+func NewDispatcher() *Dispatcher {
+	return &Dispatcher{
+		handlers: make(map[string][]EventHandler),
+	}
+}
+
+// Register registers an event handler for specific event names
+func (d *Dispatcher) Register(handler EventHandler, eventNames ...string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, eventName := range eventNames {
+		d.handlers[eventName] = append(d.handlers[eventName], handler)
+	}
+	return nil
+}
+
+// Dispatch sends an event to all registered handlers
+func (d *Dispatcher) Dispatch(eventName string, data any) error {
+	d.mu.RLock()
+	handlers, exists := d.handlers[eventName]
+	d.mu.RUnlock()
+
+	if !exists {
+		logger.NotifyEventLog.Errorf("no handlers registered for event: %s", eventName)
+		return fmt.Errorf("no handlers registered for event: %s", eventName)
+	}
+
+	for _, handler := range handlers {
+		if err := handler.HandleEvent(eventName, data); err != nil {
+			logger.NotifyEventLog.Errorf("handler error for event %s: %v", eventName, err)
+			return fmt.Errorf("handler error for event %s: %w", eventName, err)
+		}
+	}
+	return nil
+}
+
+var notifyDispatcher *Dispatcher
+
+// Notify URI doesn't have /update by default, so add it before sending the request
+const updateNotifyURI = "/update"
+
+func RegisterNotifyDispatcher() error {
+	notifyDispatcher = NewDispatcher()
+	if err := notifyDispatcher.Register(NotifyListener{}, SendSMpolicyUpdateNotifyEventName); err != nil {
+		return err
+	}
+	return nil
+}
+
+func DispatchSendSMPolicyUpdateNotifyEvent(uri string, request *models.SmPolicyNotification) {
+	if uri == "" {
+		logger.NotifyEventLog.Errorf("DispatchSendSMPolicyUpdateNotifyEvent: empty uri")
+		return
+	}
+	if uri[len(uri)-1] == '/' {
+		uri = uri[:len(uri)-1]
+	}
+	if len(uri) < len(updateNotifyURI) || uri[len(uri)-len(updateNotifyURI):] != updateNotifyURI {
+		uri = fmt.Sprintf("%s%s", uri, updateNotifyURI)
+	}
+	logger.NotifyEventLog.Debugf("DispatchSendSMPolicyUpdateNotifyEvent uri [%s]", uri)
+	if notifyDispatcher == nil {
+		logger.NotifyEventLog.Errorf("notifyDispatcher is nil")
+		return
+	}
+	err := notifyDispatcher.Dispatch(SendSMpolicyUpdateNotifyEventName, SendSMpolicyUpdateNotifyEvent{
+		uri:     uri,
+		request: request,
+	})
+	if err != nil {
+		logger.NotifyEventLog.Errorln(err)
+	}
+}

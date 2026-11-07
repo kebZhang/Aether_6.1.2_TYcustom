@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2024-Present Intel Corporation
+name: CI Pipeline
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  build:
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/build.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  docker-build:
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/docker-build.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  static-analysis:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/static-analysis.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      staticcheck_version: 'v0.8.1'
+      branch_name: ${{ github.ref }}
+  lint:
+    permissions:
+      contents: read
+      checks: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/lint.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      golangci_lint_version: 'v2.13.2'
+      branch_name: ${{ github.ref }}
+  hadolint:
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/hadolint.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  license-check:
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/license-check.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  fossa-scan:
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/fossa-scan.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  unit-tests:
+    permissions:
+      contents: read
+      checks: write
+      id-token: write
+      attestations: write
+    uses: omec-project/.github/.github/workflows/unit-test.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}
+  analysis:
+    if: github.repository_owner == 'omec-project'
+    permissions:
+      actions: read
+      artifact-metadata: read
+      attestations: read
+      checks: read
+      code-quality: read
+      contents: read
+      deployments: read
+      discussions: read
+      drives: read
+      id-token: write
+      issues: read
+      models: read
+      packages: read
+      pages: read
+      pull-requests: read
+      repository-projects: read
+      security-events: write
+      statuses: read
+      vulnerability-alerts: read
+    uses: omec-project/.github/.github/workflows/scorecard-analysis.yml@4e868da104f24faa67be0699b937f9455b75b3d4 # v0.0.33
+    with:
+      branch_name: ${{ github.ref }}

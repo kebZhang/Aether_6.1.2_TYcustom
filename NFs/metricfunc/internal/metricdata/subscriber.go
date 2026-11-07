@@ -1,0 +1,339 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package metricdata
+
+import (
+	"fmt"
+
+	"github.com/omec-project/metricfunc/internal/promclient"
+	"github.com/omec-project/metricfunc/logger"
+	"github.com/omec-project/util/metricinfo"
+)
+
+// smSessKey identifies one smf_pdu_sessions Prometheus series by its label values.
+type smSessKey struct {
+	smfIP, slice, dnn, upf string
+}
+
+// smSessCounts holds the live session count per smf_pdu_sessions label combination.
+// A single shared counter can't back a multi-label gauge: stamping one process-wide
+// total onto whichever tuple triggered the last event leaves every other tuple's
+// series frozen at a stale value and never reporting the deregistration that
+// actually happened. Access is guarded by metricData.SubLock, which every caller
+// below already holds.
+var smSessCounts = map[smSessKey]uint64{}
+
+func smSessKeyOf(sub *metricinfo.CoreSubscriber) smSessKey {
+	return smSessKey{smfIP: sub.SmfIp, slice: sub.Slice, dnn: sub.Dnn, upf: sub.UpfName}
+}
+
+// smSessPresence tracks, per subscriber imsi, whether SMF and AMF sourced data is
+// currently active. AMF and SMF publish independent Add/Mod/Del sequences for the
+// same UE, so a subscriber's counted smf_pdu_sessions tuple must only be touched by
+// the source that owns it, and the record can only be dropped once neither source
+// still has it active. Access is guarded by metricData.SubLock, same as
+// metricData.Subscribers.
+type smSessPresence struct {
+	smf, amf bool
+}
+
+var subPresences = map[string]*smSessPresence{}
+
+func incSmSessCount(sub *metricinfo.CoreSubscriber) {
+	key := smSessKeyOf(sub)
+	smSessCounts[key]++
+	promclient.SetSmfSessStats(key.smfIP, key.slice, key.dnn, key.upf, smSessCounts[key])
+}
+
+// decSmSessCount lowers the count for sub's label tuple and drops the series entirely
+// once it reaches zero, rather than leaving it published at a count that no longer
+// reflects any session.
+func decSmSessCount(sub *metricinfo.CoreSubscriber) {
+	key := smSessKeyOf(sub)
+	if smSessCounts[key] == 0 {
+		return
+	}
+	smSessCounts[key]--
+	if smSessCounts[key] == 0 {
+		delete(smSessCounts, key)
+		promclient.DeleteSmfSessStats(key.smfIP, key.slice, key.dnn, key.upf)
+		return
+	}
+	promclient.SetSmfSessStats(key.smfIP, key.slice, key.dnn, key.upf, smSessCounts[key])
+}
+
+func HandleSubscriberEvent(subsData *metricinfo.CoreSubscriberData, sourceNf metricinfo.NfType) {
+	// An imsi is this store's key. An event without one can't be merged into any real
+	// subscriber's record and, left in the map, sits there forever as a row no later event can
+	// ever reach again - so it can only be discarded here, not stored.
+	if subsData.Subscriber.Imsi == "" {
+		logger.CacheLog.Warnf("dropping subscriber event with empty imsi from sourceNF [%v]", sourceNf)
+		return
+	}
+
+	switch subsData.Operation {
+	case metricinfo.SubsOpAdd:
+		storeSubscriber(&subsData.Subscriber, sourceNf)
+	case metricinfo.SubsOpMod:
+		updateSubscriber(&subsData.Subscriber, sourceNf)
+	case metricinfo.SubsOpDel:
+		err := deleteSubscriber(&subsData.Subscriber, sourceNf)
+		if err != nil {
+			logger.CacheLog.Infof("delete subscriber %v failed for sourceNF [%v]", subsData.Subscriber.Imsi, sourceNf)
+		}
+	default:
+		logger.CacheLog.Errorf("unknown smf subscriber operation [%v]", subsData.Operation)
+	}
+}
+
+func storeSubscriber(sub *metricinfo.CoreSubscriber, sourceNf metricinfo.NfType) {
+	metricData.SubLock.Lock()
+
+	if _, ok := metricData.Subscribers[sub.Imsi]; !ok {
+		addSubscriberLocked(sub, sourceNf)
+		metricData.SubLock.Unlock()
+	} else {
+		metricData.SubLock.Unlock()
+		updateSubscriber(sub, sourceNf)
+	}
+}
+
+// addSubscriberLocked stores a brand-new subscriber entry. Caller must hold metricData.SubLock.
+func addSubscriberLocked(sub *metricinfo.CoreSubscriber, sourceNf metricinfo.NfType) {
+	metricData.Subscribers[sub.Imsi] = sub
+
+	p := &smSessPresence{}
+	// Only an SMF-sourced event carries real PDU session context
+	switch sourceNf {
+	case metricinfo.NfTypeSmf:
+		p.smf = true
+		incSmSessCount(sub)
+	case metricinfo.NfTypeAmf:
+		p.amf = true
+	}
+	subPresences[sub.Imsi] = p
+
+	logger.CacheLog.Debugf("storing subscriber with imsi [%s]", sub.Imsi)
+	pushPrometheusCoreSubData(sub)
+}
+
+func updateSubscriber(sub *metricinfo.CoreSubscriber, sourceNf metricinfo.NfType) {
+	metricData.SubLock.Lock()
+	defer metricData.SubLock.Unlock()
+	s, ok := metricData.Subscribers[sub.Imsi]
+	if !ok {
+		// A Mod can legitimately arrive before any Add for this imsi (e.g. AMF only learns
+		// SUPI once authentication completes, so its first published event for a subscriber
+		// is often a Mod). Upsert instead of dropping it, or this subscriber's data never
+		// makes it into core_subscriber at all.
+		addSubscriberLocked(sub, sourceNf)
+		return
+	}
+
+	deletePrometheusCoreSubData(s)
+
+	p := subPresences[s.Imsi]
+	if p == nil {
+		p = &smSessPresence{}
+		subPresences[s.Imsi] = p
+	}
+
+	switch sourceNf {
+	case metricinfo.NfTypeSmf:
+		// SMF specific fields
+		oldKey := smSessKeyOf(s)
+		wasCounted := p.smf
+		fillSmfSubsriberData(sub, s)
+		switch newKey := smSessKeyOf(s); {
+		case !wasCounted:
+			// First SMF-sourced data for a subscriber the AMF added earlier: oldKey was never
+			// counted, so only increment the new tuple instead of migrating from it.
+			incSmSessCount(s)
+			p.smf = true
+		case newKey != oldKey:
+			decSmSessCount(&metricinfo.CoreSubscriber{SmfIp: oldKey.smfIP, Slice: oldKey.slice, Dnn: oldKey.dnn, UpfName: oldKey.upf})
+			incSmSessCount(s)
+		}
+	case metricinfo.NfTypeAmf:
+		// AMF specific fields
+		fillAmfSubsriberData(sub, s)
+		p.amf = true
+	}
+	pushPrometheusCoreSubData(s)
+}
+
+func deleteSubscriber(sub *metricinfo.CoreSubscriber, sourceNf metricinfo.NfType) error {
+	metricData.SubLock.Lock()
+	defer metricData.SubLock.Unlock()
+	imsi := sub.Imsi
+	s, ok := metricData.Subscribers[imsi]
+	if !ok {
+		return fmt.Errorf("subscriber with imsi [%s] already deleted", imsi)
+	}
+
+	p := subPresences[imsi]
+	if p == nil {
+		p = &smSessPresence{}
+	}
+
+	deletePrometheusCoreSubData(s)
+
+	// AMF publishes SubsOpDel when it tears down the UE context independently of whether
+	// the SMF PDU session has ended, so only clear this source's own presence and session
+	// bookkeeping; the other source's data survives until it reports its own delete.
+	switch sourceNf {
+	case metricinfo.NfTypeSmf:
+		if p.smf {
+			decSmSessCount(s)
+			p.smf = false
+		}
+		s.SmfSubState = sub.SmfSubState
+	case metricinfo.NfTypeAmf:
+		p.amf = false
+		s.AmfSubState = sub.AmfSubState
+	}
+
+	// register disconnect state
+	pushPrometheusCoreSubData(s)
+
+	if p.smf || p.amf {
+		subPresences[imsi] = p
+		logger.CacheLog.Debugf("subscriber with imsi [%s] still active for the other NF after sourceNF [%v] delete", imsi, sourceNf)
+		return nil
+	}
+
+	delete(metricData.Subscribers, imsi)
+	delete(subPresences, imsi)
+
+	// register subscriber delete
+	deletePrometheusCoreSubData(s)
+
+	logger.CacheLog.Debugf("deleting subscriber with imsi [%s]", imsi)
+
+	return nil
+}
+
+func GetSubscriber(key string) (*metricinfo.CoreSubscriber, error) {
+	metricData.SubLock.RLock()
+	defer metricData.SubLock.RUnlock()
+	if sub, ok := metricData.Subscribers[key]; ok {
+		return sub, nil
+	}
+	return nil, fmt.Errorf("subscriber with key [%v] not found", key)
+}
+
+func GetSubscriberImsiFromIpAddr(ipaddr string) (*metricinfo.CoreSubscriber, error) {
+	metricData.SubLock.RLock()
+	defer metricData.SubLock.RUnlock()
+	for imsi, sub := range metricData.Subscribers {
+		if sub.IPAddress == ipaddr {
+			logger.CacheLog.Infof("found subscriber with ip-addr [%s], imsi [%s]", ipaddr, imsi)
+			return sub, nil
+		}
+	}
+	return nil, fmt.Errorf("subscriber with ip-addr [%v] not found", ipaddr)
+}
+
+func GetSubscriberAll() []string {
+	imsis := []string{}
+	metricData.SubLock.RLock()
+	defer metricData.SubLock.RUnlock()
+
+	for imsi := range metricData.Subscribers {
+		imsis = append(imsis, imsi)
+	}
+
+	return imsis
+}
+
+// Pushing to prometheus client module
+func pushPrometheusCoreSubData(sub *metricinfo.CoreSubscriber) {
+	promclient.PushCoreSubData(sub.Imsi, sub.IPAddress, sub.SmfSubState, sub.SmfIp, sub.Dnn, sub.Slice, sub.UpfName)
+}
+
+// Pushing to prometheus client module
+func deletePrometheusCoreSubData(sub *metricinfo.CoreSubscriber) {
+	promclient.DeleteCoreSubData(sub.Imsi, sub.IPAddress, sub.SmfSubState, sub.SmfIp, sub.Dnn, sub.Slice, sub.UpfName)
+}
+
+func fillSmfSubsriberData(s, d *metricinfo.CoreSubscriber) {
+	// ip-addr
+	if s.IPAddress != "" {
+		d.IPAddress = s.IPAddress
+	}
+
+	// smf ip
+	if s.SmfIp != "" {
+		d.SmfIp = s.SmfIp
+	}
+
+	// slice
+	if s.Slice != "" {
+		d.Slice = s.Slice
+	}
+
+	// dnn
+	if s.Dnn != "" {
+		d.Dnn = s.Dnn
+	}
+
+	// upf name
+	if s.UpfName != "" {
+		d.UpfName = s.UpfName
+	}
+
+	// upf ip
+	if s.UpfAddr != "" {
+		d.UpfAddr = s.UpfAddr
+	}
+
+	// always overwrite subscriber state
+	d.SmfSubState = s.SmfSubState
+}
+
+func fillAmfSubsriberData(s, d *metricinfo.CoreSubscriber) {
+	// AmfId
+	if s.AmfId != "" {
+		d.AmfId = s.AmfId
+	}
+
+	// Guti
+	if s.Guti != "" {
+		d.Guti = s.Guti
+	}
+
+	// TMSI
+	if s.Tmsi != 0 {
+		d.Tmsi = s.Tmsi
+	}
+
+	// Amf Ngap Id
+	if s.AmfNgapId != 0 {
+		d.AmfNgapId = s.AmfNgapId
+	}
+
+	// Ran Ngap Id
+	if s.RanNgapId != 0 {
+		d.RanNgapId = s.RanNgapId
+	}
+
+	// GnbId
+	if s.GnbId != "" {
+		d.GnbId = s.GnbId
+	}
+
+	// TacId
+	if s.TacId != "" {
+		d.TacId = s.TacId
+	}
+
+	//	AmfIp
+	if s.AmfIp != "" {
+		d.AmfIp = s.AmfIp
+	}
+
+	// always overwrite subscriber state
+	d.AmfSubState = s.AmfSubState
+}

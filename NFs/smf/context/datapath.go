@@ -1,0 +1,958 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package context
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	"github.com/omec-project/nas/v2/nasType"
+	"github.com/omec-project/openapi/v2/models"
+	"github.com/omec-project/smf/logger"
+	"github.com/omec-project/smf/qos"
+	"github.com/omec-project/smf/util"
+)
+
+// GTPTunnel represents the GTP tunnel information
+type GTPTunnel struct {
+	SrcEndPoint  *DataPathNode
+	DestEndPoint *DataPathNode
+
+	PDR  map[string]*PDR
+	TEID uint32
+}
+
+type DataPathNode struct {
+	UPF *UPF
+	// DataPathToAN *DataPathDownLink
+	// DataPathToDN map[string]*DataPathUpLink //uuid to DataPathLink
+
+	UpLinkTunnel   *GTPTunnel
+	DownLinkTunnel *GTPTunnel
+	// for UE Routing Topology
+	// for special case:
+	// branching & leafnode
+
+	// InUse                bool
+	IsBranchingPoint bool
+	// DLDataPathLinkForPSA *DataPathUpLink
+	// BPUpLinkPDRs         map[string]*DataPathDownLink // uuid to UpLink
+}
+
+type DataPath struct {
+	// Data Path Double Link List
+	FirstDPNode *DataPathNode
+	// meta data
+	Destination       Destination
+	Activated         bool
+	IsDefaultPath     bool
+	HasBranchingPoint bool
+}
+
+type DataPathPool map[int64]*DataPath
+
+type Destination struct {
+	DestinationIP   string
+	DestinationPort string
+	Url             string
+}
+
+func NewDataPathNode() *DataPathNode {
+	node := &DataPathNode{
+		UpLinkTunnel:   &GTPTunnel{PDR: make(map[string]*PDR)},
+		DownLinkTunnel: &GTPTunnel{PDR: make(map[string]*PDR)},
+	}
+	return node
+}
+
+func NewDataPath() *DataPath {
+	dataPath := &DataPath{
+		Destination: Destination{
+			DestinationIP:   "",
+			DestinationPort: "",
+			Url:             "",
+		},
+	}
+
+	return dataPath
+}
+
+func NewDataPathPool() DataPathPool {
+	pool := make(map[int64]*DataPath)
+	return pool
+}
+
+func (node *DataPathNode) AddNext(next *DataPathNode) {
+	node.DownLinkTunnel.SrcEndPoint = next
+}
+
+func (node *DataPathNode) AddPrev(prev *DataPathNode) {
+	node.UpLinkTunnel.SrcEndPoint = prev
+}
+
+func (node *DataPathNode) Next() *DataPathNode {
+	if node.DownLinkTunnel == nil {
+		return nil
+	}
+	next := node.DownLinkTunnel.SrcEndPoint
+	return next
+}
+
+func (node *DataPathNode) Prev() *DataPathNode {
+	if node.UpLinkTunnel == nil {
+		return nil
+	}
+	prev := node.UpLinkTunnel.SrcEndPoint
+	return prev
+}
+
+func (node *DataPathNode) ActivateUpLinkTunnel(smContext *SMContext) error {
+	var err error
+	var pdr *PDR
+	var flowQer *QER
+	logger.CtxLog.Debugln("in ActivateUpLinkTunnel")
+	node.UpLinkTunnel.SrcEndPoint = node.Prev()
+	node.UpLinkTunnel.DestEndPoint = node
+
+	destUPF := node.UPF
+
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
+
+	if pccRuleUpdate != nil {
+		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
+
+		for name, rule := range addRules {
+			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+				qosRef := ""
+				if len(rule.RefQosData) > 0 {
+					qosRef = rule.RefQosData[0]
+				}
+				tcRef := ""
+				if len(rule.RefTcData) > 0 {
+					tcRef = rule.RefTcData[0]
+				}
+				// Add PCC Rule Qos Data QER
+				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil && flowQer != nil {
+					pdr.QER = append(pdr.QER, flowQer)
+				} else if err != nil {
+					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
+				}
+				// Set PDR in Tunnel
+				node.UpLinkTunnel.PDR[name] = pdr
+			} else {
+				// A rule that cannot be described is dropped from the uplink, and silently before:
+				// the traffic it was to match is then handled by whatever rule remains, with
+				// nothing said about it anywhere.
+				logger.PduSessLog.Warnf("skip PCC rule %s on the uplink: %v", name, err)
+			}
+		}
+	} else {
+		// Default PDR
+		if pdr, err = destUPF.AddPDR(); err != nil {
+			logger.CtxLog.Errorln("in ActivateUpLinkTunnel UPF IP:", node.UPF.NodeID.ResolveNodeIdToIp().String())
+			logger.CtxLog.Errorln("allocate PDR error:", err)
+			return fmt.Errorf("add PDR failed: %s", err)
+		} else {
+			node.UpLinkTunnel.PDR["default"] = pdr
+		}
+	}
+
+	if err = smContext.PutPDRtoPFCPSession(destUPF.NodeID, node.UpLinkTunnel.PDR); err != nil {
+		logger.CtxLog.Errorln("put PDR Error:", err)
+		return err
+	}
+
+	return nil
+}
+
+func (node *DataPathNode) ActivateDownLinkTunnel(smContext *SMContext) error {
+	var err error
+	var pdr *PDR
+	var flowQer *QER
+	node.DownLinkTunnel.SrcEndPoint = node.Next()
+	node.DownLinkTunnel.DestEndPoint = node
+
+	destUPF := node.UPF
+	// Iterate through PCC Rules to install PDRs.
+	//
+	// There may be no pending update: the user plane is also rebuilt when an undelivered
+	// modification is reverted, and reverting discards the update first. Indexing unconditionally
+	// takes the SMF down on that path.
+	var pccRuleUpdate *qos.PccRulesUpdate
+	if len(smContext.SmPolicyUpdates) > 0 {
+		pccRuleUpdate = smContext.SmPolicyUpdates[0].PccRuleUpdate
+	}
+	if pccRuleUpdate != nil {
+		addRules := pccRuleUpdate.GetAddPccRuleUpdate()
+		for name, rule := range addRules {
+			if pdr, err = destUPF.BuildCreatePdrFromPccRule(rule); err == nil {
+				// The references are optional, exactly as on the uplink path above: a PCC rule
+				// that names neither is a rule with no QoS data of its own, not a reason to index
+				// past the end of an empty slice and take the SMF down.
+				qosRef := ""
+				if len(rule.RefQosData) > 0 {
+					qosRef = rule.RefQosData[0]
+				}
+
+				tcRef := ""
+				if len(rule.RefTcData) > 0 {
+					tcRef = rule.RefTcData[0]
+				}
+
+				// Add PCC Rule Qos Data QER
+				if flowQer, err = node.CreatePccRuleQer(smContext, qosRef, tcRef); err == nil && flowQer != nil {
+					pdr.QER = append(pdr.QER, flowQer)
+				} else if err != nil {
+					logger.PduSessLog.Warnf("skip PCC-rule QER for rule %s: %v", name, err)
+				}
+				// Set PDR in Tunnel
+				node.DownLinkTunnel.PDR[name] = pdr
+			} else {
+				// A rule that cannot be described is dropped from the downlink, and silently before:
+				// the traffic it was to match is then handled by whatever rule remains, with
+				// nothing said about it anywhere.
+				logger.PduSessLog.Warnf("skip PCC rule %s on the downlink: %v", name, err)
+			}
+		}
+	} else {
+		// Default PDR
+		if pdr, err = destUPF.AddPDR(); err != nil {
+			logger.CtxLog.Errorln("in ActivateDownLinkTunnel UPF IP:", node.UPF.NodeID.ResolveNodeIdToIp().String())
+			logger.CtxLog.Errorln("allocate PDR Error:", err)
+			return fmt.Errorf("add PDR failed: %s", err)
+		} else {
+			node.DownLinkTunnel.PDR["default"] = pdr
+		}
+	}
+
+	// Put PDRs in PFCP session
+	if err = smContext.PutPDRtoPFCPSession(destUPF.NodeID, node.DownLinkTunnel.PDR); err != nil {
+		logger.CtxLog.Errorln("put PDR error:", err)
+		return err
+	}
+
+	return nil
+}
+
+func (node *DataPathNode) DeactivateUpLinkTunnel(smContext *SMContext) {
+	for name, pdr := range node.UpLinkTunnel.PDR {
+		if pdr != nil {
+			logger.CtxLog.Infof("deactivated UpLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
+
+			// Remove PDR from PFCP Session
+			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+
+			// Remove of UPF
+			err := node.UPF.RemovePDR(pdr)
+			if err != nil {
+				logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
+			}
+
+			if far := pdr.FAR; far != nil {
+				err = node.UPF.RemoveFAR(far)
+				if err != nil {
+					logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
+				}
+
+				bar := far.BAR
+				if bar != nil {
+					err = node.UPF.RemoveBAR(bar)
+					if err != nil {
+						logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
+					}
+				}
+			}
+			if qerList := pdr.QER; qerList != nil {
+				for _, qer := range qerList {
+					if qer != nil {
+						err = node.UPF.RemoveQER(qer)
+						if err != nil {
+							logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
+						}
+					}
+				}
+			}
+		}
+	}
+	// The uplink's own tunnel. Resetting the downlink from here emptied its PDR map before
+	// DeactivateDownLinkTunnel had walked it, so every downlink PDR, FAR and QER stayed allocated
+	// on the user plane for the life of the process -- on ordinary session release as much as on
+	// the rollback below.
+	node.UpLinkTunnel = &GTPTunnel{}
+}
+
+func (node *DataPathNode) DeactivateDownLinkTunnel(smContext *SMContext) {
+	for name, pdr := range node.DownLinkTunnel.PDR {
+		if pdr != nil {
+			logger.CtxLog.Infof("deactivated DownLinkTunnel PDR name[%v], id[%v]", name, pdr.PDRID)
+
+			// Remove PDR from PFCP Session
+			smContext.RemovePDRfromPFCPSession(node.UPF.NodeID, pdr)
+
+			// Remove from UPF
+			err := node.UPF.RemovePDR(pdr)
+			if err != nil {
+				logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
+			}
+
+			if far := pdr.FAR; far != nil {
+				err = node.UPF.RemoveFAR(far)
+				if err != nil {
+					logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
+				}
+
+				bar := far.BAR
+				if bar != nil {
+					err = node.UPF.RemoveBAR(bar)
+					if err != nil {
+						logger.CtxLog.Warnln("deactivated DownLinkTunnel", err)
+					}
+				}
+			}
+			if qerList := pdr.QER; qerList != nil {
+				for _, qer := range qerList {
+					if qer != nil {
+						err = node.UPF.RemoveQER(qer)
+						if err != nil {
+							logger.CtxLog.Warnln("deactivated UpLinkTunnel", err)
+						}
+					}
+				}
+			}
+		}
+	}
+	node.DownLinkTunnel = &GTPTunnel{}
+}
+
+func (node *DataPathNode) GetUPFID() (id string, err error) {
+	node_ip := node.GetNodeIP()
+	var exist bool
+
+	if id, exist = smfContext.UserPlaneInformation.UPFsIPtoID[node_ip]; !exist {
+		AllocateUPFID()
+		if id, exist = smfContext.UserPlaneInformation.UPFsIPtoID[node_ip]; !exist {
+			err = fmt.Errorf("UPNode IP %s doesn't exist in smfcfg.yaml", node_ip)
+			return "", err
+		}
+	}
+
+	return id, nil
+}
+
+func (node *DataPathNode) GetNodeIP() (ip string) {
+	ip = node.UPF.NodeID.ResolveNodeIdToIp().String()
+	return
+}
+
+func (node *DataPathNode) IsANUPF() bool {
+	if node.Prev() == nil {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (node *DataPathNode) IsAnchorUPF() bool {
+	if node.Next() == nil {
+		return true
+	} else {
+		return false
+	}
+}
+
+func (dataPathPool DataPathPool) GetDefaultPath() (dataPath *DataPath) {
+	for _, path := range dataPathPool {
+		if path.IsDefaultPath {
+			dataPath = path
+			return
+		}
+	}
+	return
+}
+
+func (dataPath *DataPath) String() string {
+	firstDPNode := dataPath.FirstDPNode
+
+	var str string
+
+	str += "DataPath Meta Information\n"
+	str += "Activated: " + strconv.FormatBool(dataPath.Activated) + "\n"
+	str += "IsDefault Path: " + strconv.FormatBool(dataPath.IsDefaultPath) + "\n"
+	str += "Has Braching Point: " + strconv.FormatBool(dataPath.HasBranchingPoint) + "\n"
+	str += "Destination IP: " + dataPath.Destination.DestinationIP + "\n"
+	str += "Destination Port: " + dataPath.Destination.DestinationPort + "\n"
+
+	str += "DataPath Routing Information\n"
+	index := 1
+	for curDPNode := firstDPNode; curDPNode != nil; curDPNode = curDPNode.Next() {
+		str += strconv.Itoa(index) + "th Node in the Path\n"
+		str += "Current UPF IP: " + curDPNode.GetNodeIP() + "\n"
+		if curDPNode.Prev() != nil {
+			str += "Previous UPF IP: " + curDPNode.Prev().GetNodeIP() + "\n"
+		} else {
+			str += "Previous UPF IP: None\n"
+		}
+
+		if curDPNode.Next() != nil {
+			str += "Next UPF IP: " + curDPNode.Next().GetNodeIP() + "\n"
+		} else {
+			str += "Next UPF IP: None\n"
+		}
+
+		index++
+	}
+
+	return str
+}
+
+func (dataPath *DataPath) validateDataPathUpfStatus() error {
+	firstDPNode := dataPath.FirstDPNode
+	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		logger.PduSessLog.Infof("nodes in Data Path [%v] and status [%v]",
+			curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String(), curDataPathNode.UPF.UPFStatus.String())
+		if curDataPathNode.UPF.UPFStatus != AssociatedSetUpSuccess {
+			logger.PduSessLog.Errorf("UPF [%v] in DataPath not associated",
+				curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
+			return fmt.Errorf("UPF not associated in DataPath")
+		}
+	}
+	return nil
+}
+
+func (dataPath *DataPath) ActivateUlDlTunnel(smContext *SMContext) error {
+	firstDPNode := dataPath.FirstDPNode
+	logger.PduSessLog.Debugln("in ActivateTunnelAndPDR")
+	logger.PduSessLog.Debugln(dataPath.String())
+	// Activate Tunnels
+	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		logger.PduSessLog.Debugln("current DP Node IP:", curDataPathNode.UPF.NodeID.ResolveNodeIdToIp().String())
+		if err := curDataPathNode.ActivateUpLinkTunnel(smContext); err != nil {
+			logger.CtxLog.Warnln(err)
+			return err
+		}
+		if err := curDataPathNode.ActivateDownLinkTunnel(smContext); err != nil {
+			logger.CtxLog.Warnln(err)
+			return err
+		}
+	}
+	return nil
+}
+
+func (dpNode *DataPathNode) CreatePccRuleQer(smContext *SMContext, qosData string, tcData string) (*QER, error) {
+	// A rule's QER is built from the update that carries the rule, so there is nothing to build
+	// from when none is pending. Reported rather than returned as an empty success: the caller
+	// appends what it gets to the PDR, and a nil there is dereferenced later by the PFCP builders.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		return nil, fmt.Errorf("no pending SM policy update for UE [%s]: the rule's QER cannot be built", smContext.Supi)
+	}
+	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
+	refQos := qos.GetQoSDataFromPolicyDecision(smPolicyDec, qosData)
+	tc := qos.GetTcDataFromPolicyDecision(smPolicyDec, tcData)
+	if refQos == nil {
+		return nil, fmt.Errorf("missing QoS data reference %q", qosData)
+	}
+
+	// Get Flow Status
+	gateStatus := GateOpen
+	if tc != nil && tc.GetFlowStatus() == models.FLOWSTATUS_DISABLED {
+		gateStatus = GateClose
+	}
+
+	var flowQER *QER
+
+	if newQER, err := dpNode.UPF.AddQER(); err != nil {
+		logger.PduSessLog.Errorln("new QER failed")
+		return nil, err
+	} else {
+		newQER.QFI.QFI = qos.GetQosFlowIdFromQosId(refQos.QosId)
+
+		// Flow Status
+		newQER.GateStatus = &GateStatus{
+			ULGate: gateStatus,
+			DLGate: gateStatus,
+		}
+
+		// The session rule supplies the fallback rate when the QoS data names none. It can be
+		// absent: a modification that adds a PCC rule without changing session rules leaves
+		// SessRuleUpdate nil, and SelectedSessionRule then falls back to the committed active
+		// rule, which is itself nil on a session that never had one. Dereferencing it takes the
+		// SMF down on the ordinary case of an application function adding a flow mid-session.
+		var ulMbr, dlMbr string
+		if sessRule := smContext.SelectedSessionRule(); sessRule != nil && sessRule.AuthSessAmbr != nil {
+			ulMbr = sessRule.AuthSessAmbr.Uplink
+			dlMbr = sessRule.AuthSessAmbr.Downlink
+		} else {
+			logger.PduSessLog.Warnf("no session-level AMBR for UE [%s]; the flow's own rates are the only bound",
+				smContext.Supi)
+		}
+		if maxbrUl, ok := refQos.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
+			ulMbr = *maxbrUl
+		}
+		if maxbrDl, ok := refQos.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
+			dlMbr = *maxbrDl
+		}
+
+		// Rates
+		newQER.MBR = &MBR{
+			ULMBR: util.BitRateTokbps(ulMbr),
+			DLMBR: util.BitRateTokbps(dlMbr),
+		}
+
+		// The guaranteed rate is programmed here as well as on the policy-update path. Setting it
+		// only there means a configured guarantee reaches the UPF on a policy edit and is silently
+		// dropped when the session is established, so it disappears whenever the UE re-attaches —
+		// which reads as intermittent rather than as unimplemented. Unlike the maximum rate there
+		// is no session-level fallback: a guarantee is a commitment to one flow, and the session
+		// AMBR is a ceiling on all of them.
+		if newQER.GBR = BuildGBR(refQos); newQER.GBR != nil {
+			logger.PduSessLog.Infof("CreatePccRuleQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+				newQER.GBR.ULGBR, newQER.GBR.DLGBR, refQos.GetQosId())
+		} else {
+			logger.PduSessLog.Infof("CreatePccRuleQer: no GBR configured for QoSId [%s]", refQos.GetQosId())
+		}
+
+		flowQER = newQER
+	}
+
+	return flowQER, nil
+}
+
+// CreateSessRuleQer builds the session-level QER, the one every PDR on the path carries.
+//
+// It returns a QER or an error, never a nil QER with no error: ActivateTunnelAndPDR appends what
+// it returns to every PDR without looking, and the PFCP builders dereference each one, so a nil
+// handed back as success moves the failure somewhere that cannot say what went wrong.
+func (dpNode *DataPathNode) CreateSessRuleQer(smContext *SMContext) (*QER, error) {
+	var flowQER *QER
+
+	// The session-level rate is the session rule's, and there is no session-level QER without it.
+	// It can be absent: a modification that adds a PCC rule without changing session rules leaves
+	// SessRuleUpdate nil, and the fallback to the committed active rule is itself nil on a session
+	// that never had one.
+	sessionRule := smContext.SelectedSessionRule()
+	if sessionRule == nil || sessionRule.AuthSessAmbr == nil {
+		return nil, fmt.Errorf("no session-level AMBR for UE [%s]: the session QER cannot be built", smContext.Supi)
+	}
+
+	// The default QoS flow comes from the pending update where there is one and from committed
+	// state otherwise. The user plane is also rebuilt with nothing pending -- reverting an
+	// undelivered modification discards the update first -- and indexing there took the SMF down.
+	var defQosData *models.QosData
+	if len(smContext.SmPolicyUpdates) > 0 {
+		defQosData = qos.GetDefaultQoSDataFromPolicyDecision(smContext.SmPolicyUpdates[0].SmPolicyDecision)
+	} else {
+		defQosData = qos.GetCommittedDefaultQosData(&smContext.SmPolicyData)
+	}
+
+	if defQosData == nil {
+		return nil, fmt.Errorf("no default QoS flow for UE [%s]: the session QER cannot be built", smContext.Supi)
+	}
+	if newQER, err := dpNode.UPF.AddQER(); err != nil {
+		logger.PduSessLog.Errorln("new QER failed")
+		return nil, err
+	} else {
+		newQER.QFI.QFI = qos.GetQosFlowIdFromQosId(defQosData.QosId)
+		newQER.GateStatus = &GateStatus{
+			ULGate: GateOpen,
+			DLGate: GateOpen,
+		}
+		newQER.MBR = &MBR{
+			ULMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Uplink),
+			DLMBR: util.BitRateTokbps(sessionRule.AuthSessAmbr.Downlink),
+		}
+
+		flowQER = newQER
+	}
+
+	return flowQER, nil
+}
+
+// CreateDedicatedQosQer creates a dedicated QER (QoS Enforcement Rule) for a PDU session in the given UPF.
+// It processes the SM Policy decision for the UE and creates QERs for each dedicated QoS flow (non-default).
+func (dpNode *DataPathNode) CreateDedicatedQosQer(smContext *SMContext) ([]*QER, error) {
+	var createdQERs []*QER
+
+	// Log start of QER creation
+	logger.PduSessLog.Infof("CreateDedicatedQosQer: start for UE [%s], PDU Session ID [%d]",
+		smContext.Supi, smContext.PDUSessionID)
+
+	// Nothing pending. Reachable whenever the user plane is rebuilt after the pending update has
+	// been discarded — which is exactly what reverting an undelivered modification does — and
+	// indexing here would take the SMF down.
+	if len(smContext.SmPolicyUpdates) == 0 {
+		logger.PduSessLog.Warnf("no pending SM policy update while building QERs for UE [%s]; nothing to program",
+			smContext.Supi)
+		return nil, nil
+	}
+	smPolicyDec := smContext.SmPolicyUpdates[0].SmPolicyDecision
+	logger.PduSessLog.Infof("CreateDedicatedQosQer: total QoSData entries = %d", len(smPolicyDec.GetQosDecs()))
+
+	// Iterate over all QoSData in SM Policy decision
+	for qosID, qosData := range smPolicyDec.GetQosDecs() {
+		// Skip default QoS flows
+		if qosData.GetDefQosFlowIndication() {
+			logger.PduSessLog.Infof("CreateDedicatedQosQer: skipping default QoSData [QosId=%s]", qosID)
+			continue
+		}
+
+		logger.PduSessLog.Infof("CreateDedicatedQosQer: processing dedicated QoSData [QosId=%s, 5QI=%d]", qosData.GetQosId(), qosData.GetVar5qi())
+
+		// Attempt to add a new QER in the UPF
+		if newQER, err := dpNode.UPF.AddQER(); err != nil {
+			// Error creating QER
+			logger.PduSessLog.Errorf("CreateDedicatedQosQer: AddQER failed for UE [%s], QoSId [%s], error: %v",
+				smContext.Supi, qosData.GetQosId(), err)
+			return nil, err
+		} else {
+			// Successfully created QER, set QFI
+			newQER.QFI.QFI = qos.GetQosFlowIdFromQosId(qosData.QosId)
+
+			// Set GateStatus: open UL and DL gates by default
+			newQER.GateStatus = &GateStatus{
+				ULGate: GateOpen,
+				DLGate: GateOpen,
+			}
+			if newQER.GBR = BuildGBR(&qosData); newQER.GBR != nil {
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: GBR set [UL=%d kbps, DL=%d kbps] for QoSId [%s]",
+					newQER.GBR.ULGBR, newQER.GBR.DLGBR, qosData.GetQosId())
+			} else {
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: no GBR configured for QoSId [%s]", qosData.GetQosId())
+			}
+
+			// Set Maximum Bit Rate (MBR) if configured
+			var maxbrul string
+			var maxbrdl string
+			// Set Guaranteed Bit Rate (GBR) if configured
+			if maxbrUl, ok := qosData.GetMaxbrUlOk(); ok && maxbrUl != nil && *maxbrUl != "" {
+				maxbrul = *maxbrUl
+			}
+			if maxbrDl, ok := qosData.GetMaxbrDlOk(); ok && maxbrDl != nil && *maxbrDl != "" {
+				maxbrdl = *maxbrDl
+			}
+
+			if maxbrul != "" && maxbrdl != "" {
+				newQER.MBR = &MBR{
+					ULMBR: util.BitRateTokbps(util.NormalizeBitRate(maxbrul)),
+					DLMBR: util.BitRateTokbps(util.NormalizeBitRate(maxbrdl)),
+				}
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: MBR set [UL=%d kbps, DL=%d kbps]",
+					newQER.MBR.ULMBR, newQER.MBR.DLMBR)
+			} else {
+				logger.PduSessLog.Infof("CreateDedicatedQosQer: no MBR configured for QoSId [%s]", qosData.GetQosId())
+			}
+
+			// Log the created QER
+			logger.PduSessLog.Infof("CreateDedicatedQosQer: QER created [QER-ID=%d, QFI=%d] for UE [%s], QoSId [%s]",
+				newQER.QERID, newQER.QFI.QFI, smContext.Supi, qosData.GetQosId())
+
+			// Track the last created QER
+			createdQERs = append(createdQERs, newQER)
+		}
+	}
+
+	// If no dedicated QERs was created, log a warning
+	if len(createdQERs) == 0 {
+		logger.PduSessLog.Warnf("CreateDedicatedQosQer: no dedicated QER created for UE [%s]", smContext.Supi)
+		return nil, nil
+	}
+
+	// Log success with last created QER
+	logger.PduSessLog.Infof("CreateDedicatedQosQer: success, created %d QER(s) for UE [%s]",
+		len(createdQERs), smContext.Supi)
+
+	return createdQERs, nil
+}
+
+// ActivateUpLinkPdr
+func (dpNode *DataPathNode) ActivateUpLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32) error {
+	ueIpAddr := UEIPAddress{}
+	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+		ueIpAddr.CHV4 = true
+	} else {
+		ueIpAddr.V4 = true
+		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+	}
+
+	curULTunnel := dpNode.UpLinkTunnel
+	for name, ULPDR := range curULTunnel.PDR {
+		ULPDR.QER = append(ULPDR.QER, defQER)
+
+		// Set Default precedence
+		if ULPDR.Precedence == 0 {
+			ULPDR.Precedence = defPrecedence
+		}
+
+		ULPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceAccess}
+		ULPDR.PDI.LocalFTeid = &FTEID{
+			Ch: true,
+		}
+		ULPDR.PDI.UEIPAddress = &ueIpAddr
+		ULPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+		ULPDR.OuterHeaderRemoval = &OuterHeaderRemoval{
+			OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
+		}
+
+		ULFAR := ULPDR.FAR
+		ULFAR.ApplyAction = ApplyAction{
+			Buff: false,
+			Drop: false,
+			Dupl: false,
+			Forw: true,
+			Nocp: false,
+		}
+		ULFAR.ForwardingParameters = &ForwardingParameters{
+			DestinationInterface: DestinationInterface{
+				InterfaceValue: DestinationInterfaceCore,
+			},
+			NetworkInstance: []byte(smContext.Dnn),
+		}
+
+		if dpNode.IsAnchorUPF() {
+			ULFAR.ForwardingParameters.
+				DestinationInterface.InterfaceValue = DestinationInterfaceSgiLanN6Lan
+		}
+
+		if nextULDest := dpNode.Next(); nextULDest != nil {
+			nextULTunnel := nextULDest.UpLinkTunnel
+			iface := nextULTunnel.DestEndPoint.UPF.GetInterface(models.UPINTERFACETYPE_N9, smContext.Dnn)
+
+			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
+				logger.CtxLog.Errorf("activate UpLink PDR[%v] failed %v", name, err)
+				return err
+			} else {
+				ULFAR.ForwardingParameters.OuterHeaderCreation = &OuterHeaderCreation{
+					OuterHeaderCreationDescription: OuterHeaderCreationGtpUUdpIpv4,
+					Ipv4Address:                    upIP,
+					Teid:                           nextULTunnel.TEID,
+				}
+			}
+		}
+		logger.CtxLog.Infof("activate UpLink PDR[%v]:[%v]", name, ULPDR)
+	}
+	return nil
+}
+
+func (dpNode *DataPathNode) ActivateDlLinkPdr(smContext *SMContext, defQER *QER, defPrecedence uint32, dataPath *DataPath) error {
+	var iface *UPFInterfaceInfo
+	curDLTunnel := dpNode.DownLinkTunnel
+
+	// UPF provided UE ip-addr
+	ueIpAddr := UEIPAddress{}
+	if dpNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+		ueIpAddr.CHV4 = true
+	} else {
+		ueIpAddr.V4 = true
+		ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+	}
+
+	for name, DLPDR := range curDLTunnel.PDR {
+		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v]", name, DLPDR)
+		DLPDR.QER = append(DLPDR.QER, defQER)
+
+		if DLPDR.Precedence == 0 {
+			DLPDR.Precedence = defPrecedence
+		}
+
+		if !dpNode.IsAnchorUPF() {
+			DLPDR.OuterHeaderRemoval = &OuterHeaderRemoval{
+				OuterHeaderRemovalDescription: OuterHeaderRemovalGtpUUdpIpv4,
+			}
+		}
+
+		DLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
+		DLPDR.PDI.UEIPAddress = &ueIpAddr
+
+		DLFAR := DLPDR.FAR
+
+		logger.PduSessLog.Debugln("current DP Node IP:", dpNode.UPF.NodeID.ResolveNodeIdToIp().String())
+		logger.PduSessLog.Debugln("before DLPDR OuterHeaderCreation")
+		if nextDLDest := dpNode.Prev(); nextDLDest != nil {
+			logger.PduSessLog.Debugln("in DLPDR OuterHeaderCreation")
+			nextDLTunnel := nextDLDest.DownLinkTunnel
+
+			DLFAR.ApplyAction = ApplyAction{
+				Buff: true,
+				Drop: false,
+				Dupl: false,
+				Forw: false,
+				Nocp: true,
+			}
+
+			if nextDLDest.UPF == nil {
+				logger.CtxLog.Errorf("nextDLDest.UPF is nil, cannot proceed with Downlink PDR setup for node: %v", nextDLDest)
+				return fmt.Errorf("nextDLDest.UPF is nil")
+			}
+
+			iface = nextDLDest.UPF.GetInterface(models.UPINTERFACETYPE_N9, smContext.Dnn)
+
+			if upIP, err := iface.IP(smContext.SelectedPDUSessionType); err != nil {
+				logger.CtxLog.Errorf("activate Downlink PDR[%v] failed %v", name, err)
+				return err
+			} else {
+				DLFAR.ForwardingParameters = &ForwardingParameters{
+					DestinationInterface: DestinationInterface{InterfaceValue: DestinationInterfaceAccess},
+					OuterHeaderCreation: &OuterHeaderCreation{
+						OuterHeaderCreationDescription: OuterHeaderCreationGtpUUdpIpv4,
+						Ipv4Address:                    upIP,
+						Teid:                           nextDLTunnel.TEID,
+					},
+				}
+			}
+		} else {
+			if anIP := smContext.Tunnel.ANInformation.IPAddress; anIP != nil {
+				ANUPF := dataPath.FirstDPNode
+				DefaultDLPDR := ANUPF.DownLinkTunnel.PDR["default"] // TODO: Iterate over all PDRs
+				DLFAR := DefaultDLPDR.FAR
+				DLFAR.ForwardingParameters = new(ForwardingParameters)
+				DLFAR.ForwardingParameters.DestinationInterface.InterfaceValue = DestinationInterfaceAccess
+				DLFAR.ForwardingParameters.NetworkInstance = []byte(smContext.Dnn)
+				DLFAR.ForwardingParameters.OuterHeaderCreation = new(OuterHeaderCreation)
+
+				dlOuterHeaderCreation := DLFAR.ForwardingParameters.OuterHeaderCreation
+				dlOuterHeaderCreation.OuterHeaderCreationDescription = OuterHeaderCreationGtpUUdpIpv4
+				dlOuterHeaderCreation.Teid = smContext.Tunnel.ANInformation.TEID
+				dlOuterHeaderCreation.Ipv4Address = smContext.Tunnel.ANInformation.IPAddress.To4()
+			}
+		}
+		logger.CtxLog.Infof("activate Downlink PDR[%v]:[%v]", name, DLPDR)
+	}
+	return nil
+}
+
+// ActivateTunnelAndPDR
+func (dataPath *DataPath) ActivateTunnelAndPDR(smContext *SMContext, precedence uint32) error {
+	// Check if UPF association is good
+	if err := dataPath.validateDataPathUpfStatus(); err != nil {
+		logger.PduSessLog.Errorln("one or more UPF in DataPath not associated")
+		return err
+	}
+
+	// Allocate Local SEIDs
+	smContext.AllocateLocalSEIDForDataPath(dataPath)
+
+	// Allocate UL/DL PDRs for the Tunnels
+	if err := dataPath.ActivateUlDlTunnel(smContext); err != nil {
+		logger.PduSessLog.Errorf("activate UL/DL tunnel error %v", err.Error())
+		dataPath.DeactivateTunnelAndPDR(smContext)
+
+		return err
+	}
+
+	// Activate PDR
+	for curDataPathNode := dataPath.FirstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		// Add flow QER
+		defQER, err := curDataPathNode.CreateSessRuleQer(smContext)
+		if err != nil {
+			logger.CtxLog.Errorf("failed to create session rule QER: %v", err)
+			// What the tunnels above allocated goes back. The caller refuses the session and never
+			// releases it, and releasing is the only thing that returns PDR, FAR and QER ids to
+			// the user plane's pools -- removing the SM context does not. A cause that repeats,
+			// which a policy supplying no session rule does, would otherwise exhaust them one
+			// refused session at a time.
+			dataPath.DeactivateTunnelAndPDR(smContext)
+
+			return err
+		}
+
+		logger.CtxLog.Debugln("calculate", curDataPathNode.UPF.PFCPAddr().String())
+
+		// Setup UpLink PDR
+		if curDataPathNode.UpLinkTunnel != nil {
+			if err := curDataPathNode.ActivateUpLinkPdr(smContext, defQER, precedence); err != nil {
+				logger.CtxLog.Errorf("failed to activate UpLink PDR for node %v: %+v", curDataPathNode.GetNodeIP(), err)
+			}
+		}
+
+		// Setup DownLink PDR
+		if curDataPathNode.DownLinkTunnel != nil {
+			if err := curDataPathNode.ActivateDlLinkPdr(smContext, defQER, precedence, dataPath); err != nil {
+				logger.CtxLog.Errorf("activate DlLink PDR error %v", err.Error())
+			}
+		}
+
+		ueIpAddr := UEIPAddress{}
+		if curDataPathNode.UPF.IsUpfSupportUeIpAddrAlloc() {
+			ueIpAddr.CHV4 = true
+		} else {
+			ueIpAddr.V4 = true
+			ueIpAddr.Ipv4Address = smContext.PDUAddress.Ip.To4()
+		}
+
+		if curDataPathNode.DownLinkTunnel != nil {
+			if curDataPathNode.DownLinkTunnel.SrcEndPoint == nil {
+				for _, DNDLPDR := range curDataPathNode.DownLinkTunnel.PDR {
+					DNDLPDR.PDI.SourceInterface = SourceInterface{InterfaceValue: SourceInterfaceCore}
+					DNDLPDR.PDI.NetworkInstance = nasType.Dnn(smContext.Dnn)
+					DNDLPDR.PDI.UEIPAddress = &ueIpAddr
+				}
+			}
+		}
+	}
+
+	dataPath.Activated = true
+	logger.CtxLog.Debugln("dataPath successfully activated")
+	return nil
+}
+
+func (dataPath *DataPath) DeactivateTunnelAndPDR(smContext *SMContext) {
+	firstDPNode := dataPath.FirstDPNode
+
+	// Deactivate Tunnels
+	for curDataPathNode := firstDPNode; curDataPathNode != nil; curDataPathNode = curDataPathNode.Next() {
+		curDataPathNode.DeactivateUpLinkTunnel(smContext)
+		curDataPathNode.DeactivateDownLinkTunnel(smContext)
+	}
+
+	dataPath.Activated = false
+}
+
+// BuildGBR turns the guaranteed rates on a QoS decision into the PFCP GBR IE, or nil when neither
+// direction carries one.
+//
+// A guarantee in one direction only is honoured rather than discarded. Requiring both silently
+// dropped the whole guarantee when an operator configured one, which is a plausible thing to want
+// and the likelier one on a satellite link, where the return path is the scarce direction. TS
+// 29.244 carries both rates in the same IE and zero in a direction means no guaranteed rate there,
+// so the unconfigured direction is left at zero rather than invented.
+//
+// Each direction is converted only when it was configured. BitRateTokbps happens to return zero
+// for an empty string, by way of the error path in its Atoi, but that is incidental rather than
+// intended and is not something to build on.
+//
+// Trimmed as it is read, so a value that is only whitespace counts as unconfigured. Left untrimmed
+// it is not the empty string, so it produced a GBR IE carrying zero in both directions -- which
+// tells the user plane there is a guaranteed rate of nothing, rather than that there is none.
+func BuildGBR(qosData *models.QosData) *GBR {
+	var gbrul, gbrdl string
+	if qosData.HasGbrUl() {
+		gbrul = strings.TrimSpace(qosData.GetGbrUl())
+	}
+	if qosData.HasGbrDl() {
+		gbrdl = strings.TrimSpace(qosData.GetGbrDl())
+	}
+	if gbrul == "" && gbrdl == "" {
+		return nil
+	}
+
+	gbr := &GBR{}
+	if gbrul != "" {
+		gbr.ULGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrul))
+	}
+	if gbrdl != "" {
+		gbr.DLGBR = util.BitRateTokbps(util.NormalizeBitRate(gbrdl))
+	}
+	return gbr
+}

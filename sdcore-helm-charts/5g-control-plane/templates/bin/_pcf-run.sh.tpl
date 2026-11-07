@@ -1,0 +1,29 @@
+#!/bin/sh
+
+# Copyright 2024-present Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+set -xe
+
+{{- if .Values.config.coreDump.enabled }}
+cp /usr/local/bin/pcf /tmp/coredump/
+{{- end }}
+
+CFGPATH=/tmp
+FILENAME=pcfcfg.yaml
+# copy config file from configmap (/opt) to a directory a non-root user can write (/tmp)
+cp /opt/$FILENAME $CFGPATH/$FILENAME
+{{- if .Values.mongodb.enabled }}
+# The MongoDB URL carries the operator's password: printed without it.
+sed -E 's#(mongodb://[^:/@]*:)[^@]*@#\1****@#g' $CFGPATH/$FILENAME
+{{- else }}
+cat $CFGPATH/$FILENAME
+{{- end }}
+echo ""
+
+# exec, so that the PCF replaces this shell and receives the SIGTERM Kubernetes sends on
+# a delete or a rollout, and runs its shutdown sequence: it deregisters from the NRF.
+# Verified with its peers running; see #176 and the AMF script.
+exec env GOTRACEBACK=crash pcf -cfg $CFGPATH/$FILENAME

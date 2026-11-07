@@ -1,0 +1,370 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package metricinfo
+
+type CoreSubscriber struct {
+	UpfName     string `json:"upfid,omitempty"`
+	UpfAddr     string `json:"upfAddr,omitempty"`
+	SmfId       string `json:"smfId,omitempty"`
+	SmfIp       string `json:"smfIp,omitempty"`
+	SmfSubState string `json:"smfSubState,omitempty"`
+	IPAddress   string `json:"ipaddress,omitempty"`
+	Dnn         string `json:"dnn,omitempty"`
+	Slice       string `json:"slice,omitempty"`
+	UeState     string `json:"ueState,omitempty"`
+	AmfId       string `json:"amfId,omitempty"`
+	Imsi        string `json:"imsi,omitempty"`
+	AmfIp       string `json:"amfIp,omitempty"`
+	TacId       string `json:"tacid,omitempty"`
+	Guti        string `json:"guti,omitempty"`
+	GnbId       string `json:"gnbid,omitempty"`
+	AmfSubState string `json:"amfSubState,omitempty"`
+	RanNgapId   int64  `json:"ranngapId,omitempty"`
+	AmfNgapId   int64  `json:"amfngapId,omitempty"`
+	RSEID       int    `json:"rseid,omitempty"`
+	Version     int    `json:"version,omitempty"`
+	LSEID       int    `json:"lseid,omitempty"`
+	Tmsi        int32  `json:"tmsi,omitempty"`
+}
+
+type CoreMsgType struct {
+	MsgType    string `json:"msgType,omitempty"`
+	SourceNfId string `json:"sourceNfId,omitempty"`
+}
+
+type CoreEventType int64
+
+const (
+	CSubscriberEvt CoreEventType = iota
+	CMsgTypeEvt
+	CNfStatusEvt
+)
+
+func (e CoreEventType) String() string {
+	switch e {
+	case CSubscriberEvt:
+		return "SubscriberEvt"
+	case CMsgTypeEvt:
+		return "MsgTypeEvt"
+	case CNfStatusEvt:
+		return "CNfStatusEvt"
+	}
+	return "Unknown"
+}
+
+type NfStatusType string
+
+const (
+	NfStatusConnected    NfStatusType = "Connected"
+	NfStatusDisconnected NfStatusType = "Disconnected"
+)
+
+type NfType string
+
+const (
+	NfTypeSmf NfType = "SMF"
+	NfTypeAmf NfType = "AMF"
+	NfTypeUPF NfType = "UPF"
+	NfTypeGnb NfType = "GNB"
+	NfTypeEnd NfType = "Invalid"
+)
+
+type CNfStatus struct {
+	NfType   NfType       `json:"nfType,omitempty"`
+	NfStatus NfStatusType `json:"nfStatus,omitempty"`
+	NfName   string       `json:"nfName,omitempty"`
+}
+
+type SubscriberOp uint
+
+const (
+	SubsOpAdd SubscriberOp = iota + 1
+	SubsOpMod
+	SubsOpDel
+)
+
+type CoreSubscriberData struct {
+	Subscriber CoreSubscriber `json:"subscriber,omitempty"`
+	Operation  SubscriberOp   `json:"subsOp,omitempty"`
+}
+
+// Sent by NFs(Producers) and received by Metric Function
+type MetricEvent struct {
+	NfStatusData   CNfStatus          `json:"nfStatusData"`
+	MsgType        CoreMsgType        `json:"coreMsgType,omitempty"`
+	SubscriberData CoreSubscriberData `json:"subscriberData,omitempty"`
+	EventType      CoreEventType      `json:"eventType,omitempty"`
+}
+
+type SmfMsgType uint64
+
+const (
+	Smf_msg_type_invalid SmfMsgType = iota
+	Smf_msg_type_pdu_sess_create_req
+	Smf_msg_type_pdu_sess_create_rsp_success
+	Smf_msg_type_pdu_sess_create_rsp_failure
+	Smf_msg_type_pdu_sess_modify_req
+	Smf_msg_type_pdu_sess_modify_rsp_success
+	Smf_msg_type_pdu_sess_modify_rsp_failure
+	Smf_msg_type_pdu_sess_release_req
+	Smf_msg_type_pdu_sess_release_rsp_success
+	Smf_msg_type_pdu_sess_release_rsp_failure
+	Smf_msg_type_n1n2_transfer_req
+	Smf_msg_type_n1n2_transfer_rsp_success
+	Smf_msg_type_n1n2_transfer_rsp_failure
+	Smf_msg_type_smpolicy_create_req
+	Smf_msg_type_smpolicy_create_rsp_success
+	Smf_msg_type_smpolicy_create_rsp_failure
+	Smf_msg_type_pfcp_sess_estab_req
+	Smf_msg_type_pfcp_sess_estab_rsp_success
+	Smf_msg_type_pfcp_sess_estab_rsp_failure
+	Smf_msg_type_pfcp_sess_modify_req
+	Smf_msg_type_pfcp_sess_modify_rsp_success
+	Smf_msg_type_pfcp_sess_modify_rsp_failure
+	Smf_msg_type_pfcp_sess_release_req
+	Smf_msg_type_pfcp_sess_release_rsp_success
+	Smf_msg_type_pfcp_sess_release_rsp_failure
+	Smf_msg_type_pfcp_association_req
+	Smf_msg_type_pfcp_association_rsp_success
+	Smf_msg_type_pfcp_association_rsp_failure
+	Smf_msg_type_pfcp_heartbeat_req
+	Smf_msg_type_pfcp_heartbeat_rsp_success
+	Smf_msg_type_pfcp_heartbeat_rsp_failure
+	Smf_msg_type_udm_get_smdata_req
+	Smf_msg_type_udm_get_smdata_rsp_success
+	Smf_msg_type_udm_get_smdata_rsp_failure
+	Smf_msg_type_nrf_discovery_amf_req
+	Smf_msg_type_nrf_discovery_amf_rsp_success
+	Smf_msg_type_nrf_discovery_amf_rsp_failure
+	Smf_msg_type_nrf_discovery_pcf_req
+	Smf_msg_type_nrf_discovery_pcf_rsp_success
+	Smf_msg_type_nrf_discovery_pcf_rsp_failure
+	Smf_msg_type_nrf_discovery_udm_req
+	Smf_msg_type_nrf_discovery_udm_rsp_success
+	Smf_msg_type_nrf_discovery_udm_rsp_failure
+	Smf_msg_type_nrf_register_smf_req
+	Smf_msg_type_nrf_register_smf_rsp_success
+	Smf_msg_type_nrf_register_smf_rsp_failure
+	Smf_msg_type_nrf_deregister_smf_req
+	Smf_msg_type_nrf_deregister_smf_rsp_success
+	Smf_msg_type_nrf_deregister_smf_rsp_failure
+)
+
+func (t SmfMsgType) String() string {
+	switch t {
+	case Smf_msg_type_pdu_sess_create_req:
+		return "smf_pdu_sess_create_req"
+	case Smf_msg_type_pdu_sess_create_rsp_success:
+		return "smf_pdu_sess_create_rsp_success"
+	case Smf_msg_type_pdu_sess_create_rsp_failure:
+		return "smf_pdu_sess_create_rsp_failure"
+	case Smf_msg_type_pdu_sess_modify_req:
+		return "smf_pdu_sess_modify_req"
+	case Smf_msg_type_pdu_sess_modify_rsp_success:
+		return "smf_pdu_sess_modify_rsp_success"
+	case Smf_msg_type_pdu_sess_modify_rsp_failure:
+		return "smf_pdu_sess_modify_rsp_failure"
+	case Smf_msg_type_pdu_sess_release_req:
+		return "smf_pdu_sess_release_req"
+	case Smf_msg_type_pdu_sess_release_rsp_success:
+		return "smf_pdu_sess_release_rsp_success"
+	case Smf_msg_type_pdu_sess_release_rsp_failure:
+		return "smf_pdu_sess_release_rsp_failure"
+	case Smf_msg_type_n1n2_transfer_req:
+		return "smf_n1n2_transfer_req"
+	case Smf_msg_type_n1n2_transfer_rsp_success:
+		return "smf_n1n2_transfer_rsp_success"
+	case Smf_msg_type_n1n2_transfer_rsp_failure:
+		return "smf_n1n2_transfer_rsp_failure"
+	case Smf_msg_type_smpolicy_create_req:
+		return "smf_smpolicy_create_req"
+	case Smf_msg_type_smpolicy_create_rsp_success:
+		return "smf_smpolicy_create_rsp_success"
+	case Smf_msg_type_smpolicy_create_rsp_failure:
+		return "smf_smpolicy_create_rsp_failure"
+	case Smf_msg_type_pfcp_sess_estab_req:
+		return "smf_pfcp_sess_estab_req"
+	case Smf_msg_type_pfcp_sess_estab_rsp_success:
+		return "smf_pfcp_sess_estab_rsp_success"
+	case Smf_msg_type_pfcp_sess_estab_rsp_failure:
+		return "smf_pfcp_sess_estab_rsp_failure"
+	case Smf_msg_type_pfcp_sess_modify_req:
+		return "smf_pfcp_sess_modify_req"
+	case Smf_msg_type_pfcp_sess_modify_rsp_success:
+		return "smf_pfcp_sess_modify_rsp_success"
+	case Smf_msg_type_pfcp_sess_modify_rsp_failure:
+		return "smf_pfcp_sess_modify_rsp_failure"
+	case Smf_msg_type_pfcp_sess_release_req:
+		return "smf_pfcp_sess_release_req"
+	case Smf_msg_type_pfcp_sess_release_rsp_success:
+		return "smf_pfcp_sess_release_rsp_success"
+	case Smf_msg_type_pfcp_sess_release_rsp_failure:
+		return "smf_pfcp_sess_release_rsp_failure"
+	case Smf_msg_type_pfcp_association_req:
+		return "smf_pfcp_association_req"
+	case Smf_msg_type_pfcp_association_rsp_success:
+		return "smf_pfcp_association_rsp_success"
+	case Smf_msg_type_pfcp_association_rsp_failure:
+		return "smf_pfcp_association_rsp_failure"
+	case Smf_msg_type_pfcp_heartbeat_req:
+		return "smf_pfcp_heartbeat_req"
+	case Smf_msg_type_pfcp_heartbeat_rsp_success:
+		return "smf_pfcp_heartbeat_rsp_success"
+	case Smf_msg_type_pfcp_heartbeat_rsp_failure:
+		return "smf_pfcp_heartbeat_rsp_failure"
+	case Smf_msg_type_udm_get_smdata_req:
+		return "smf_udm_get_smdata_req"
+	case Smf_msg_type_udm_get_smdata_rsp_success:
+		return "smf_udm_get_smdata_rsp_success"
+	case Smf_msg_type_udm_get_smdata_rsp_failure:
+		return "smf_udm_get_smdata_rsp_failure"
+	case Smf_msg_type_nrf_discovery_amf_req:
+		return "smf_nrf_discovery_amf_req"
+	case Smf_msg_type_nrf_discovery_amf_rsp_success:
+		return "smf_nrf_discovery_amf_rsp_success"
+	case Smf_msg_type_nrf_discovery_amf_rsp_failure:
+		return "smf_nrf_discovery_amf_rsp_failure"
+	case Smf_msg_type_nrf_discovery_pcf_req:
+		return "smf_nrf_discovery_pcf_req"
+	case Smf_msg_type_nrf_discovery_pcf_rsp_success:
+		return "smf_nrf_discovery_pcf_rsp_success"
+	case Smf_msg_type_nrf_discovery_pcf_rsp_failure:
+		return "smf_nrf_discovery_pcf_rsp_failure"
+	case Smf_msg_type_nrf_discovery_udm_req:
+		return "smf_nrf_discovery_udm_req"
+	case Smf_msg_type_nrf_discovery_udm_rsp_success:
+		return "smf_nrf_discovery_udm_rsp_success"
+	case Smf_msg_type_nrf_discovery_udm_rsp_failure:
+		return "smf_nrf_discovery_udm_rsp_failure"
+	case Smf_msg_type_nrf_register_smf_req:
+		return "smf_nrf_register_smf_req"
+	case Smf_msg_type_nrf_register_smf_rsp_success:
+		return "smf_nrf_register_smf_rsp_success"
+	case Smf_msg_type_nrf_register_smf_rsp_failure:
+		return "smf_nrf_register_smf_rsp_failure"
+	case Smf_msg_type_nrf_deregister_smf_req:
+		return "smf_nrf_deregister_smf_req"
+	case Smf_msg_type_nrf_deregister_smf_rsp_success:
+		return "smf_nrf_deregister_smf_rsp_success"
+	case Smf_msg_type_nrf_deregister_smf_rsp_failure:
+		return "smf_nrf_deregister_smf_rsp_failure"
+	default:
+		return "unknown smf msg type"
+	}
+}
+
+type AmfMsgType uint64
+
+const (
+	Amf_msg_type_invalid AmfMsgType = iota
+	Amf_msg_type_ngap_ng_setup_req
+	Amf_msg_type_ngap_ng_setup_rsp
+	Amf_msg_type_ngap_ng_setup_failure
+	Amf_msg_type_ngap_init_ue
+	Amf_msg_type_ngap_ul_nas_transport
+	Amf_msg_type_ngap_reset_req
+	Amf_msg_type_ngap_reset_ack
+	Amf_msg_type_ngap_handover_cancel
+	Amf_msg_type_ngap_ue_ctxt_rel_req
+	Amf_msg_type_ngap_ue_ctxt_rel_complete
+	Amf_msg_type_ngap_nas_non_dlvry_ind
+	Amf_msg_type_ngap_location_report_fail_ind
+	Amf_msg_type_ngap_error_ind
+	Amf_msg_type_ngap_ue_radio_cap_ind
+	Amf_msg_type_ngap_handover_notify
+	Amf_msg_type_ngap_handover_prep
+	Amf_msg_type_ngap_ran_config_update
+	Amf_msg_type_ngap_rrc_inactive_trans_report
+	Amf_msg_type_ngap_pdu_sess_resource_notify
+	Amf_msg_type_ngap_path_switch_req
+	Amf_msg_type_ngap_pdu_sess_resource_mod_ind
+	Amf_msg_type_ngap_resource_rel
+	Amf_msg_type_ngap_ue_radio_cap_check
+	Amf_msg_type_ngap_amd_config_update
+	Amf_msg_type_ngap_initial_ctxt_rsp
+	Amf_msg_type_ngap_ue_ctxt_mod_rsp
+	Amf_msg_type_ngap_resource_setup_rsp
+	Amf_msg_type_ngap_pdu_sess_resource_mod_rsp
+	Amf_msg_type_ngap_handover_req_ack
+	Amf_msg_type_ngap_amf_config_update_failure
+	Amf_msg_type_ngap_initial_ctxt_setup_failure
+	Amf_msg_type_ngap_handover_failure
+	Amf_msg_type_ngap_ue_ctxt_mod_failure
+)
+
+func (t AmfMsgType) String() string {
+	switch t {
+	case Amf_msg_type_invalid:
+		return "Amf_msg_type_invalid"
+	case Amf_msg_type_ngap_ng_setup_req:
+		return "Amf_msg_type_ngap_ng_setup_req"
+	case Amf_msg_type_ngap_ng_setup_rsp:
+		return "Amf_msg_type_ngap_ng_setup_rsp"
+	case Amf_msg_type_ngap_ng_setup_failure:
+		return "Amf_msg_type_ngap_ng_setup_failure"
+	case Amf_msg_type_ngap_init_ue:
+		return "Amf_msg_type_ngap_init_ue"
+	case Amf_msg_type_ngap_ul_nas_transport:
+		return "Amf_msg_type_ngap_ul_nas_transport"
+	case Amf_msg_type_ngap_reset_req:
+		return "Amf_msg_type_ngap_reset_req"
+	case Amf_msg_type_ngap_reset_ack:
+		return "Amf_msg_type_ngap_reset_ack"
+	case Amf_msg_type_ngap_handover_cancel:
+		return "Amf_msg_type_ngap_handover_cancel"
+	case Amf_msg_type_ngap_ue_ctxt_rel_req:
+		return "Amf_msg_type_ngap_ue_ctxt_rel_req"
+	case Amf_msg_type_ngap_ue_ctxt_rel_complete:
+		return "Amf_msg_type_ngap_ue_ctxt_rel_complete"
+	case Amf_msg_type_ngap_nas_non_dlvry_ind:
+		return "Amf_msg_type_ngap_nas_non_dlvry_ind"
+	case Amf_msg_type_ngap_location_report_fail_ind:
+		return "Amf_msg_type_ngap_location_report_fail_ind"
+	case Amf_msg_type_ngap_error_ind:
+		return "Amf_msg_type_ngap_error_ind"
+	case Amf_msg_type_ngap_ue_radio_cap_ind:
+		return "Amf_msg_type_ngap_ue_radio_cap_ind"
+	case Amf_msg_type_ngap_handover_notify:
+		return "Amf_msg_type_ngap_handover_notify"
+	case Amf_msg_type_ngap_handover_prep:
+		return "Amf_msg_type_ngap_handover_prep"
+	case Amf_msg_type_ngap_ran_config_update:
+		return "Amf_msg_type_ngap_ran_config_update"
+	case Amf_msg_type_ngap_rrc_inactive_trans_report:
+		return "Amf_msg_type_ngap_rrc_inactive_trans_report"
+	case Amf_msg_type_ngap_pdu_sess_resource_notify:
+		return "Amf_msg_type_ngap_pdu_sess_resource_notify"
+	case Amf_msg_type_ngap_path_switch_req:
+		return "Amf_msg_type_ngap_path_switch_req"
+	case Amf_msg_type_ngap_pdu_sess_resource_mod_ind:
+		return "Amf_msg_type_ngap_pdu_sess_resource_mod_ind"
+	case Amf_msg_type_ngap_resource_rel:
+		return "Amf_msg_type_ngap_resource_rel"
+	case Amf_msg_type_ngap_ue_radio_cap_check:
+		return "Amf_msg_type_ngap_ue_radio_cap_check"
+	case Amf_msg_type_ngap_amd_config_update:
+		return "Amf_msg_type_ngap_amd_config_update"
+	case Amf_msg_type_ngap_initial_ctxt_rsp:
+		return "Amf_msg_type_ngap_initial_ctxt_rsp"
+	case Amf_msg_type_ngap_ue_ctxt_mod_rsp:
+		return "Amf_msg_type_ngap_ue_ctxt_mod_rsp"
+	case Amf_msg_type_ngap_resource_setup_rsp:
+		return "Amf_msg_type_ngap_resource_setup_rsp"
+	case Amf_msg_type_ngap_pdu_sess_resource_mod_rsp:
+		return "Amf_msg_type_ngap_pdu_sess_resource_mod_rsp"
+	case Amf_msg_type_ngap_handover_req_ack:
+		return "Amf_msg_type_ngap_handover_req_ack"
+	case Amf_msg_type_ngap_amf_config_update_failure:
+		return "Amf_msg_type_ngap_amf_config_update_failure"
+	case Amf_msg_type_ngap_initial_ctxt_setup_failure:
+		return "Amf_msg_type_ngap_initial_ctxt_setup_failure"
+	case Amf_msg_type_ngap_handover_failure:
+		return "Amf_msg_type_ngap_handover_failure"
+	case Amf_msg_type_ngap_ue_ctxt_mod_failure:
+		return "Amf_msg_type_ngap_ue_ctxt_mod_failure"
+	default:
+		return "Amf_msg_type_unknown"
+	}
+}

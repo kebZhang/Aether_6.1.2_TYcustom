@@ -1,0 +1,421 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+//
+// SPDX-License-Identifier: Apache-2.0
+//
+
+package udp
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"sync"
+	"time"
+
+	"github.com/omec-project/upfadapter/config"
+	"github.com/omec-project/upfadapter/logger"
+	"github.com/omec-project/upfadapter/types"
+	"github.com/wmnsk/go-pfcp/message"
+)
+
+const (
+	PFCP_PORT        = 8805
+	PFCP_MAX_UDP_LEN = 2048
+)
+
+type ConsumerTable struct {
+	m sync.Map // map[string]TxTable
+	// registerMu makes registering a transaction and releasing a peer's table mutually exclusive.
+	// Each step is atomic on its own through the sync.Map; the pairs are not, and a release
+	// landing inside one leaves a transaction in a table no lookup will reach again.
+	registerMu sync.Mutex
+}
+
+type PfcpEventData struct {
+	ErrHandler func(message.Message, error)
+	LSEID      uint64
+}
+
+type PfcpServer struct {
+	Addr *net.UDPAddr
+	Conn *net.UDPConn
+	// Consumer Table
+	// Map Consumer IP to its tx table
+	ConsumerTable ConsumerTable
+}
+
+var Server *PfcpServer
+
+// ErrResendRequest reports that a peer retransmitted a request the adapter is already
+// answering, which is ordinary and not a read failure. It was previously compared by
+// message text, in a spelling the text never had, so every retransmission was logged as
+// an error -- unnoticed while no user-plane-originated request was handled at all.
+// readPfcpMessage is its only source and returns it unwrapped, so callers compare it
+// directly.
+var ErrResendRequest = fmt.Errorf("receive resend PFCP request")
+
+// ErrDuplicateSequence reports that a request could not be sent because one is already in
+// flight under the same sequence number. Requests the adapter sends share a single table,
+// keyed by this socket's own address, so a number the SMF chose and one the adapter chose
+// can meet there. A caller that owns its numbering can answer this by trying the next one;
+// callers relaying a peer's number cannot, and the distinction is only visible if the
+// reason is.
+var ErrDuplicateSequence = errors.New("duplicate sequence number")
+
+var (
+	ServerStartTime time.Time
+	CPNodeID        *types.NodeID
+)
+
+func (t *ConsumerTable) Load(consumerAddr string) (*TxTable, bool) {
+	txTable, ok := t.m.Load(consumerAddr)
+	if ok {
+		return txTable.(*TxTable), ok
+	}
+	return nil, false
+}
+
+// DeleteByHost drops the tables of every consumer at one address, whatever port each was seen
+// on. A response is keyed by the peer's own source address, and the port that arrives on is the
+// peer's to choose, so releasing one guessed port would leave the entry that exists.
+// stillHolds reports whether this is the table the peer's transactions are being looked up in.
+// A table that has been replaced -- or taken away by a release -- is still perfectly usable and
+// perfectly invisible: whatever was put in it cannot be found again.
+func (t *ConsumerTable) stillHolds(consumerAddr string, table *TxTable) bool {
+	current, held := t.m.Load(consumerAddr)
+
+	return held && current == table
+}
+
+// DeleteByHost and PutTransaction are serialised against each other by registerMu. The sync.Map
+// underneath makes each of their steps atomic, which is not the same thing: registering is a
+// lookup and an insertion, releasing is a walk and a delete, and interleaving them leaves a
+// transaction in a table nothing will look in again.
+func (t *ConsumerTable) DeleteByHost(ip string) {
+	t.registerMu.Lock()
+	defer t.registerMu.Unlock()
+
+	t.m.Range(func(key, _ any) bool {
+		consumerAddr, ok := key.(string)
+		if !ok {
+			return true
+		}
+
+		if host, _, err := net.SplitHostPort(consumerAddr); err == nil && host == ip {
+			t.m.Delete(consumerAddr)
+		}
+
+		return true
+	})
+}
+
+// LoadOrStore returns the table for consumerAddr, creating it only if there is none. Checking
+// first and storing afterwards lets two goroutines create a table for the same consumer at once,
+// and the transactions inserted into the loser are lost along with it.
+func (t *ConsumerTable) LoadOrStore(consumerAddr string, txTable *TxTable) *TxTable {
+	actual, _ := t.m.LoadOrStore(consumerAddr, txTable)
+
+	return actual.(*TxTable)
+}
+
+func init() {
+	// Released while config holds the lock that de-authorises the address, so a peer named again
+	// cannot have its answer thrown away by a release decided before it existed.
+	config.OnUpfAddrReleased(ForgetConsumer)
+
+	CPNodeID = &types.NodeID{NodeIdType: uint8(0), NodeIdValue: []byte(config.UpfAdapterIp)}
+}
+
+// ForgetConsumer drops the transaction table held for a peer.
+//
+// Responses are held per peer -- ConsumerAddr is the destination for a response, unlike a request,
+// which is keyed by this socket -- so answering user planes leaves one table each, and nothing in
+// the transaction machinery ever removes an empty one. Reclaiming them by emptiness would race the
+// next insertion for the same peer, and losing that race means a retransmission is relayed a second
+// time, which is the defect this relay exists to remove. Reclaiming them when the peer stops being
+// authorised does not: the source gate refuses its reports from that moment, so there is nothing
+// left to absorb.
+func ForgetConsumer(ip string) {
+	if Server == nil {
+		return
+	}
+
+	Server.ConsumerTable.DeleteByHost(ip)
+}
+
+// putAttempts bounds how many times a transaction is re-registered after finding its peer's table
+// detached underneath it. A peer is released once, not repeatedly, so more than a couple of rounds
+// here means the peer is being taken away as fast as it is named -- and then the honest answer is
+// that the message cannot be registered, not another round.
+const putAttempts = 3
+
+func PutTransaction(tx *Transaction) error {
+	// Both steps insert-if-absent in one operation. Reading first and writing afterwards leaves a
+	// window between the two: two goroutines sending at once could each find the consumer table
+	// missing and create one, or each find a sequence free and store under it, and in both cases
+	// one transaction is dropped while its caller is told the message went out.
+	// Held across the lookup and the insertion, so a release cannot land between them.
+	Server.ConsumerTable.registerMu.Lock()
+	defer Server.ConsumerTable.registerMu.Unlock()
+
+	for range putAttempts {
+		txTable := Server.ConsumerTable.LoadOrStore(tx.ConsumerAddr, &TxTable{})
+
+		if _, loaded := txTable.LoadOrStore(tx.SequenceNumber, tx); loaded {
+			return fmt.Errorf("insert tx error: %w %d", ErrDuplicateSequence, tx.SequenceNumber)
+		}
+
+		// Those two are still two operations, and releasing the peer between them detaches the
+		// table the second one wrote into. A transaction in a detached table cannot be found again
+		// -- the next lookup for this peer creates a fresh table -- so the insert would have been
+		// reported as a success that nothing can act on: no response matched, no retransmission
+		// absorbed. Checking afterwards is what makes the pair hold together. If the table is
+		// still the peer's, the insert stands; if it is not, the transaction goes into whatever
+		// replaced it.
+		if Server.ConsumerTable.stillHolds(tx.ConsumerAddr, txTable) {
+			return nil
+		}
+
+		// What went into the detached table stays there, and is garbage as soon as this loop drops
+		// the last reference to it: nothing is watching it, because the resend goroutine is only
+		// started once this returns success.
+		logger.PfcpLog.Warnf("the transaction table for %s was detached while registering seq[%d]; registering it again",
+			tx.ConsumerAddr, tx.SequenceNumber)
+	}
+
+	return fmt.Errorf("could not register a transaction for %s: its table was detached on each of %d attempts",
+		tx.ConsumerAddr, putAttempts)
+}
+
+func startTxLifeCycle(tx *Transaction) {
+	sendErr := tx.Start()
+
+	err := removeTransaction(tx)
+	if err != nil {
+		logger.PfcpLog.Warnln(err)
+	}
+
+	if sendErr != nil && tx.EventData != nil {
+		if eventData, ok := tx.EventData.(PfcpEventData); ok {
+			if errHandler := eventData.ErrHandler; errHandler != nil {
+				msg, err := message.Parse(tx.SendMsg)
+				if err != nil {
+					logger.PfcpLog.Warnf("parse message error: %v", err)
+					return
+				}
+				errHandler(msg, sendErr)
+			}
+		}
+	}
+}
+
+func SendPfcp(msg message.Message, addr *net.UDPAddr, eventData interface{}) error {
+	if Server == nil {
+		return fmt.Errorf("PFCP server is not initialized")
+	}
+	if Server.Conn == nil {
+		return fmt.Errorf("PFCP server is not listening")
+	}
+
+	buf := make([]byte, msg.MarshalLen())
+	err := msg.MarshalTo(buf)
+	if err != nil {
+		return err
+	}
+
+	tx := NewTransaction(msg, buf, Server.Conn, addr, eventData)
+	err = PutTransaction(tx)
+	if err != nil {
+		logger.PfcpLog.Errorf("failed to send PFCP message: %v", err)
+		return err
+	}
+	go startTxLifeCycle(tx)
+	return nil
+}
+
+// readPfcpMessage returns the peer address alongside the message. A message the
+// user-plane function originates -- a session report -- has to be answered and
+// relayed, and neither is possible without knowing who sent it.
+func readPfcpMessage() (message.Message, *net.UDPAddr, error) {
+	if Server == nil {
+		return nil, nil, fmt.Errorf("PFCP server is not initialized")
+	}
+	if Server.Conn == nil {
+		return nil, nil, fmt.Errorf("PFCP server is not listening")
+	}
+
+	buf := make([]byte, PFCP_MAX_UDP_LEN)
+	n, addr, err := Server.Conn.ReadFromUDP(buf)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	msg, err := message.Parse(buf[:n])
+	if err != nil {
+		logger.PfcpLog.Errorf("error parsing PFCP message: %v", err)
+		return nil, nil, err
+	}
+
+	if IsRequest(msg) {
+		// Todo: Implement SendingResponse type of reliable delivery
+		tx, err := findTransaction(msg, addr)
+		if err != nil {
+			return msg, addr, err
+		} else if tx != nil {
+			// err == nil && tx != nil => Resend Request
+			err = ErrResendRequest
+
+			// Not a blocking send: this runs on the one goroutine that reads PFCP, and the channel
+			// holds a single event. A user plane retransmitting faster than its transaction reads
+			// would fill it and stop the adapter reading PFCP at all -- every session, not just
+			// this one. One pending notification says everything a second would: the transaction
+			// resends once it reads it.
+			select {
+			case tx.EventChannel <- ReceiveResendRequest:
+			default:
+				logger.PfcpLog.Debugf("a resend is already pending for seq[%d]; not queueing another",
+					msg.Sequence())
+			}
+
+			return msg, addr, err
+		} else {
+			// err == nil && tx == nil => New Request
+			return msg, addr, nil
+		}
+	} else if IsResponse(msg) {
+		tx, err := findTransaction(msg, Server.Addr)
+		if err != nil {
+			return msg, addr, err
+		}
+		// Not a blocking send, for the same reason: a second response to a request already answered
+		// would otherwise hold the read loop until its transaction came back for the first.
+		select {
+		case tx.EventChannel <- ReceiveValidResponse:
+		default:
+			logger.PfcpLog.Debugf("seq[%d] is already answered; dropping a repeat response", msg.Sequence())
+		}
+	}
+
+	return msg, addr, nil
+}
+
+func findTransaction(msg message.Message, addr *net.UDPAddr) (*Transaction, error) {
+	var tx *Transaction
+	consumerAddr := addr.String()
+
+	if Server == nil {
+		return nil, fmt.Errorf("PFCP server is not initialized")
+	}
+
+	if IsResponse(msg) {
+		if _, exist := Server.ConsumerTable.Load(consumerAddr); !exist {
+			return nil, fmt.Errorf("txTable not found")
+		}
+
+		txTable, _ := Server.ConsumerTable.Load(consumerAddr)
+		seqNum := msg.Sequence()
+
+		if _, exist := txTable.Load(seqNum); !exist {
+			return nil, fmt.Errorf("sequence number [%d] not found", seqNum)
+		}
+
+		tx, _ = txTable.Load(seqNum)
+	} else if IsRequest(msg) {
+		if _, exist := Server.ConsumerTable.Load(consumerAddr); !exist {
+			return nil, nil
+		}
+		txTable, _ := Server.ConsumerTable.Load(consumerAddr)
+		seqNum := msg.Sequence()
+		if _, exist := txTable.Load(seqNum); !exist {
+			return nil, nil
+		}
+		tx, _ = txTable.Load(seqNum)
+	}
+	return tx, nil
+}
+
+// Run listens for PFCP on the adapter's address and dispatches what it reads
+// until ctx is cancelled. It returns once the socket is closed and the read
+// loop has stopped, or at once if the socket cannot be opened.
+func Run(ctx context.Context, Dispatch func(message.Message, *net.UDPAddr)) {
+	addr := &net.UDPAddr{
+		IP:   net.ParseIP(CPNodeID.ResolveNodeIdToIp().String()),
+		Port: PFCP_PORT,
+	}
+	conn, err := net.ListenUDP("udp", addr)
+	if err != nil {
+		logger.PfcpLog.Errorf("failed to listen on %s: %v", addr.String(), err)
+		return
+	}
+	Server = &PfcpServer{
+		Addr: addr,
+		Conn: conn,
+	}
+	logger.PfcpLog.Infof("listen on %s", addr.String())
+
+	ServerStartTime = time.Now()
+	serve(ctx, conn, Dispatch)
+}
+
+// serve runs the read loop on conn until ctx is cancelled, then closes conn
+// and waits for the loop to stop.
+func serve(ctx context.Context, conn *net.UDPConn, Dispatch func(message.Message, *net.UDPAddr)) {
+	loopDone := make(chan struct{})
+	go func() {
+		defer close(loopDone)
+		readLoop(Dispatch)
+	}()
+
+	<-ctx.Done()
+	if err := conn.Close(); err != nil {
+		logger.PfcpLog.Warnf("closing PFCP socket: %v", err)
+	}
+	<-loopDone
+}
+
+// readLoop reads PFCP messages until the socket is closed. Any other read error
+// is logged and the loop goes on; a closed socket fails every read at once, so
+// going on would spin.
+func readLoop(Dispatch func(message.Message, *net.UDPAddr)) {
+	for {
+		pfcpMessage, remoteAddr, err := readPfcpMessage()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				logger.PfcpLog.Infoln("PFCP socket closed, stopped reading")
+				return
+			}
+			if err == ErrResendRequest {
+				logger.PfcpLog.Infoln(err)
+			} else {
+				logger.PfcpLog.Warnf("read PFCP error: %v", err)
+			}
+			continue
+		}
+		go Dispatch(pfcpMessage, remoteAddr)
+	}
+}
+
+func removeTransaction(tx *Transaction) error {
+	if Server == nil {
+		return fmt.Errorf("PFCP server is not initialized")
+	}
+	consumerAddr := tx.ConsumerAddr
+	txTable, _ := Server.ConsumerTable.Load(consumerAddr)
+
+	if !txTable.DeleteIf(tx.SequenceNumber, tx) {
+		// Either it is already gone, or what is under that number now belongs to someone else:
+		// the peer was released and named again, and this table is the successor's.
+		return fmt.Errorf("remove tx error: transaction [%d] is no longer the one held for %s",
+			tx.SequenceNumber, consumerAddr)
+	}
+
+	switch tx.TxType {
+	case SendingRequest:
+		logger.PfcpLog.Debugf("remove request transaction [%d]", tx.SequenceNumber)
+	case SendingResponse:
+		logger.PfcpLog.Debugf("remove response transaction [%d]", tx.SequenceNumber)
+	}
+
+	return nil
+}

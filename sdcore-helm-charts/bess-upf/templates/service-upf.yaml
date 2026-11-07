@@ -1,0 +1,27 @@
+{{/*
+# Copyright (c) 2026 Intel Corporation
+# Copyright 2020-present Open Networking Foundation
+
+# SPDX-License-Identifier: Apache-2.0
+*/}}
+
+---
+apiVersion: v1
+kind: Service
+{{ tuple "upf" "upf" . | include "omec-user-plane.service_head" }}
+  ports:
+{{- tuple "pfcp" "UDP" 8805 .Values.service.nodePort . | include "omec-user-plane.service_port" | nindent 2 }}
+{{- if .Values.config.upf.closedLoop }}
+  - name: closed-loop
+    protocol: TCP
+    port: {{ .Values.config.upf.closedLoopPort }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+{{ tuple "upf-http" "upf" . | include "omec-user-plane.service_head" }}
+  ports:
+  - name: bess-web
+    protocol: TCP
+    port: 8000
+{{- tuple "prometheus-exporter" "TCP" .Values.config.upf.prometheus.port .Values.config.upf.prometheus.nodePort . | include "omec-user-plane.service_port" | nindent 2 }}

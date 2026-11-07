@@ -1,0 +1,159 @@
+// SPDX-FileCopyrightText: 2022-present Intel Corporation
+// SPDX-FileCopyrightText: 2021 Open Networking Foundation <info@opennetworking.org>
+// Copyright 2019 free5GC.org
+//
+// SPDX-License-Identifier: Apache-2.0
+
+package consumer
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+
+	"github.com/omec-project/nas/v2/nasConvert"
+	"github.com/omec-project/openapi/v2"
+	"github.com/omec-project/openapi/v2/models"
+	smf_context "github.com/omec-project/smf/context"
+	"github.com/omec-project/smf/logger"
+)
+
+// SendSMPolicyAssociationCreate create the session management association to the PCF
+func SendSMPolicyAssociationCreate(smContext *smf_context.SMContext) (*models.SmPolicyDecision, int, error) {
+	httpRspStatusCode := http.StatusInternalServerError
+	if smContext.SMPolicyClient == nil {
+		return nil, httpRspStatusCode, fmt.Errorf("smContext not selected PCF")
+	}
+
+	pduSessionType := nasConvert.PDUSessionTypeToModels(smContext.SelectedPDUSessionType)
+	if !pduSessionType.IsValid() {
+		return nil, http.StatusBadRequest, fmt.Errorf("invalid selected PDU session type %d for PCF policy association", smContext.SelectedPDUSessionType)
+	}
+
+	if smContext.Snssai == nil {
+		return nil, http.StatusBadRequest, fmt.Errorf("missing S-NSSAI for PCF policy association")
+	}
+
+	smPolicyData := models.SmPolicyContextData{
+		Supi:         smContext.Supi,
+		PduSessionId: smContext.PDUSessionID,
+		NotificationUri: fmt.Sprintf("%s://%s:%d/nsmf-callback/sm-policies/%s",
+			smf_context.SMF_Self().URIScheme,
+			smf_context.SMF_Self().RegisterIPv4,
+			smf_context.SMF_Self().SBIPort,
+			smContext.Ref,
+		),
+		Dnn:            smContext.Dnn,
+		PduSessionType: pduSessionType,
+		AccessType:     smContext.AnType.Ptr(),
+		RatType:        smContext.RatType.Ptr(),
+		Ipv4Address:    openapi.PtrString(smContext.PDUAddress.Ip.To4().String()),
+		SubsSessAmbr:   smContext.DnnConfiguration.SessionAmbr,
+		SubsDefQos:     smContext.DnnConfiguration.Var5gQosProfile,
+		SliceInfo:      *smContext.Snssai,
+		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
+		SuppFeat:       openapi.PtrString("F"),
+	}
+
+	var smPolicyDecision *models.SmPolicyDecision
+	apiCreateSMPolicyRequest := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicy(context.Background())
+	apiCreateSMPolicyRequest = apiCreateSMPolicyRequest.SmPolicyContextData(smPolicyData)
+	if smPolicyDecisionFromPCF, httpRsp, err := smContext.SMPolicyClient.SMPoliciesCollectionAPI.CreateSMPolicyExecute(apiCreateSMPolicyRequest); err != nil {
+		if httpRsp != nil {
+			httpRspStatusCode = httpRsp.StatusCode
+			if rspCloseErr := httpRsp.Body.Close(); rspCloseErr != nil {
+				logger.ConsumerLog.Errorf("CreateSMPolicy response body cannot close: %+v", rspCloseErr)
+			}
+		}
+		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
+	} else {
+		httpRspStatusCode = http.StatusCreated
+		smPolicyDecision = smPolicyDecisionFromPCF
+		if httpRsp != nil {
+			if rspCloseErr := httpRsp.Body.Close(); rspCloseErr != nil {
+				logger.ConsumerLog.Errorf("CreateSMPolicy response body cannot close: %+v", rspCloseErr)
+			}
+		}
+	}
+
+	if err := validateSmPolicyDecision(smPolicyDecision); err != nil {
+		return nil, httpRspStatusCode, fmt.Errorf("setup sm policy association failed: %s", err.Error())
+	}
+
+	return smPolicyDecision, httpRspStatusCode, nil
+}
+
+func SendSMPolicyAssociationDelete(smContext *smf_context.SMContext, smDelReq *models.ReleaseSmContextRequest) (int, error) {
+	// A session released before ever getting a PCF policy client (e.g. caught mid-establishment)
+	// has nothing to tear down. This is a successful no-op, not an error: callers such as
+	// releaseUnrestorableSession must not report the session as failed to release just because
+	// it never had a PCF association to delete.
+	if smContext.SMPolicyClient == nil {
+		return http.StatusNoContent, nil
+	}
+
+	smPolicyDelData := models.SmPolicyDeleteData{
+		ServingNetwork: models.NewPlmnIdNid(smContext.ServingNetwork.Mcc, smContext.ServingNetwork.Mnc),
+	}
+
+	// User location info
+	jd := smDelReq.GetJsonData()
+	if jd.HasUeLocation() {
+		smPolicyDelData.SetUserLocationInfo(jd.GetUeLocation())
+	} else if jd.HasAddUeLocation() {
+		smPolicyDelData.SetUserLocationInfo(jd.GetAddUeLocation())
+	}
+
+	// UE Time Zone
+	if jd.GetUeTimeZone() != "" {
+		smPolicyDelData.SetUeTimeZone(jd.GetUeTimeZone())
+	}
+
+	// RAN/NAS Release Cause
+	ranNasRelCause := models.NewRanNasRelCause()
+	ranNasRelCause.SetVar5gMmCause(jd.GetVar5gMmCauseValue())
+	if jd.HasNgApCause() {
+		ranNasRelCause.SetNgApCause(jd.GetNgApCause())
+	}
+	smPolicyDelData.SetRanNasRelCauses([]models.RanNasRelCause{*ranNasRelCause})
+
+	// Policy Id (supi-pduSessId)
+	smPolicyID := fmt.Sprintf("%s-%d", smContext.Supi, smContext.PDUSessionID)
+
+	// Send to  PCF
+	apiDeleteSMPolicyRequest := smContext.SMPolicyClient.IndividualSMPolicyDocumentAPI.DeleteSMPolicy(context.Background(), smPolicyID)
+	apiDeleteSMPolicyRequest = apiDeleteSMPolicyRequest.SmPolicyDeleteData(smPolicyDelData)
+	if httpRsp, err := smContext.SMPolicyClient.IndividualSMPolicyDocumentAPI.DeleteSMPolicyExecute(apiDeleteSMPolicyRequest); err != nil {
+		logger.ConsumerLog.Warnf("smf policy delete failed, [%v] ", err.Error())
+		if httpRsp != nil {
+			if rspCloseErr := httpRsp.Body.Close(); rspCloseErr != nil {
+				logger.ConsumerLog.Errorf("DeleteSMPolicy response body cannot close: %+v", rspCloseErr)
+			}
+		}
+		return 0, err
+	} else {
+		defer func() {
+			if rspCloseErr := httpRsp.Body.Close(); rspCloseErr != nil {
+				logger.ConsumerLog.Errorf("DeleteSMPolicy response body cannot close: %+v", rspCloseErr)
+			}
+		}()
+		return httpRsp.StatusCode, nil
+	}
+}
+
+func validateSmPolicyDecision(smPolicy *models.SmPolicyDecision) error {
+	// Validate just presence of important IEs as of now
+	// Sess Rules
+	for name, rule := range smPolicy.GetSessRules() {
+		if rule.AuthSessAmbr == nil {
+			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised session ambr missing", name)
+			return fmt.Errorf("authorised session ambr missing")
+		}
+
+		if rule.AuthDefQos == nil {
+			logger.ConsumerLog.Errorf("SM policy decision rule [%s] validation failure, authorised default qos missing", name)
+			return fmt.Errorf("authorised default qos missing")
+		}
+	}
+	return nil
+}
