@@ -1,0 +1,32 @@
+#!/bin/bash
+# Run on machine B (K8s node). Imports the tar from build_aether_images.sh and
+# points the sd-core release at the new tags.
+set -euo pipefail
+
+TAG=NF8HTTP_1108                                 # same as build_aether_images.sh
+NFS="amf ausf udm udr pcf nrf"                    # same as build_aether_images.sh
+TAR=/local/aether/aether-$TAG.tar
+VALUES=/local/aether/aether-sdcore-values.yaml   # uploaded by Deploy_Aether_K8s.sh
+
+# 1. Import into the node's container runtime
+runtime=$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.containerRuntimeVersion}')
+case "$runtime" in
+  docker://*)     sudo docker load -i "$TAR" ;;
+  containerd://*) sudo ctr -n k8s.io images import "$TAR" ;;
+  *) echo "ERROR: unknown container runtime: $runtime"; exit 1 ;;
+esac
+
+# 2. helm upgrade: same chart / version / values as Deploy_Aether_K8s.sh, plus the new tags.
+#    pullPolicy stays IfNotPresent, so the imported images are used without pulling.
+SETS=""
+for nf in $NFS; do
+  SETS="$SETS --set 5g-control-plane.images.tags.$nf=5gc-$nf:$TAG"
+done
+helm -n aether-5gc upgrade sd-core oci://ghcr.io/omec-project/sd-core --version 6.1.2 -f "$VALUES" $SETS
+
+# 3. Wait for the new pods, then for NRF registration
+for nf in $NFS; do
+  kubectl -n aether-5gc rollout status deploy/$nf --timeout=300s
+done
+python3 /local/aether/aether_webui.py --namespace aether-5gc wait-nrf --timeout 300
+kubectl -n aether-5gc get pods -o custom-columns=NAME:.metadata.name,IMAGE:.spec.containers[0].image
