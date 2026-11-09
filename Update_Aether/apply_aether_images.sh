@@ -5,7 +5,7 @@
 set -euo pipefail
 
 TAR=${1:?usage: ./apply_aether_images.sh <aether-TAG.tar>}
-NFS="amf ausf udm udr pcf nrf"                    # same as build_aether_images.sh
+NFS="amf ausf udm udr pcf nrf nssf smf"           # same as build_aether_images.sh
 VALUES=/local/aether/aether-sdcore-values.yaml   # uploaded by Deploy_Aether_K8s.sh
 
 # TAG comes from the file name build_aether_images.sh gave the tar: aether-<TAG>.tar
@@ -14,6 +14,13 @@ case "$name" in
   aether-?*.tar) TAG=${name#aether-}; TAG=${TAG%.tar} ;;
   *) echo "ERROR: expected aether-<TAG>.tar (as written by build_aether_images.sh), got: $name"; exit 1 ;;
 esac
+
+# Every NF in NFS must be in the tar. A tar built when NFS had only 6 NFs
+# (e.g. aether-NF8HTTP_1108.tar) has no nssf/smf: stop here, before helm upgrade.
+manifest=$(tar -xOf "$TAR" manifest.json)
+for nf in $NFS; do
+  grep -q "5gc-$nf:$TAG\"" <<< "$manifest" || { echo "ERROR: $name has no 5gc-$nf:$TAG -- rebuild it with build_aether_images.sh"; exit 1; }
+done
 
 # 1. Import into the node's container runtime
 runtime=$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.containerRuntimeVersion}')

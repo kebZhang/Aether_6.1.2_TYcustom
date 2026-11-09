@@ -14,11 +14,11 @@
 
 下面以 tag `NF8HTTP_1108` 为例，`<A>`、`<B>` 换成两台机器的地址。
 
-## 1. C：改好 NFS，提交代码
+## 1. C：提交代码
 
-打开 `build_aether_images.sh` 和 `apply_aether_images.sh`，把开头的 `NFS` 改成一样的值：只填你改过的 NF。
+两个脚本开头的 `NFS` 固定是 8 个 NF：`amf ausf udm udr pcf nrf nssf smf`。每次都编译、替换这 8 个，不管这次改了哪几个，所以不用改 `NFS`。
 
-tag 不用改脚本，第 2 步编译时作为参数传入。
+tag 也不用改脚本，第 2 步编译时作为参数传入。
 
 ```bash
 cd /mnt/d/UB/Nemo/5GC_project/code/Aether_6.1.2_TYcustom
@@ -54,7 +54,9 @@ cd /local/aether
 ./apply_aether_images.sh aether-NF8HTTP_1108.tar
 ```
 
-最后一行会打印每个 pod 用的镜像，确认改过的 NF 显示的是 `...:NF8HTTP_1108`。之后照常进 PacketRusher pod 运行 `./entry_aether.sh`。
+最后一行会打印每个 pod 用的镜像，确认 8 个 NF 显示的都是 `...:NF8HTTP_1108`。之后照常进 PacketRusher pod 运行 `./entry_aether.sh`。
+
+以前 `NFS` 只有 6 个 NF 时编的 tar（比如 `aether-NF8HTTP_1108.tar`）里没有 nssf、smf。apply 会在 helm upgrade 之前报 `has no 5gc-nssf:...` 并退出，什么都不改。这种 tar 要用现在的脚本重新编译。
 
 ## 注意
 

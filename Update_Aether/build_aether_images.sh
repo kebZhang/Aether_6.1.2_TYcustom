@@ -5,7 +5,7 @@
 set -euo pipefail
 
 TAG=${1:?usage: ./build_aether_images.sh <TAG>}  # new tag per build
-NFS="amf ausf udm udr pcf nrf"                   # keep only the NFs you changed; apply_aether_images.sh must use the same
+NFS="amf ausf udm udr pcf nrf nssf smf"          # always all 8 NFs; apply_aether_images.sh must use the same
 OUT=/local/aether-$TAG.tar                       # outside the repo, so git never sees it; apply_aether_images.sh reads TAG from this name
 
 # Images are named ghcr.io/omec-project/5gc-<nf>:<TAG> because the chart builds

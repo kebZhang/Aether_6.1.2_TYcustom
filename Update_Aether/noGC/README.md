@@ -113,11 +113,11 @@ bash set_aether_noGC.sh gc-on
 
 删掉 `GOGC`、`GOMEMLIMIT`、`GODEBUG`（amf 的 `GOGC` 改回 chart 的 200），smf 的启动命令改回原样，GOMAXPROCS 保持不变。镜像不用换：noGC 镜像在 GC 开着时和 NF8HTTP 镜像一样，只是多一个没人访问的 `:6060`。
 
-要换回 NF8HTTP 镜像：运行 `../apply_aether_images.sh`。它只设 6 个 NF 的 tag，nssf 和 smf 会回到 chart 默认的官方镜像。
+上一级的 `../build_aether_images.sh`、`../apply_aether_images.sh` 现在也固定是这 8 个 NF，`gc_trigger.go` 已经在仓库里，所以用它们编出来的镜像同样带 `:6060/gc`，GC 开不开同样只看 pod 上的设置。
 
 ## 注意
 
-- **换回 NF8HTTP 镜像后，没跑 `gc-on` 的话 GC 仍然是关的**：除了 amf、smf 被 helm upgrade 改回 200，其余 6 个 NF 的 `GOGC=off` 还在，而旧镜像没有 `:6060/gc`，没法强制 GC。不确定当前状态时，不带参数运行 `bash set_aether_noGC.sh` 查看。
+- **回退到官方镜像（helm upgrade 不带 `--set`）之前先跑 `gc-on`**：否则除了 amf、smf 被 helm upgrade 改回 200，其余 6 个 NF 的 `GOGC=off` 还在，而官方镜像没有 `:6060/gc`，没法强制 GC。不确定当前状态时，不带参数运行 `bash set_aether_noGC.sh` 查看。
 - **GOMEMLIMIT 是每个进程单独算的**：8 × 32GiB = 256GiB。如果节点内存比这小，多个 NF 同时涨到很大时节点会先没内存。正常情况下一个 run 的分配量远小于 32GiB，可以从 `force_gc_allNF.sh` 输出的 `heap` 前一个数看出每个 run 实际分配了多少。
 - **强制 GC 只回收，不把内存还给操作系统**，回收的内存留在进程里给下一个 run 用，所以下一个 run 不会因为重新向系统要内存而变慢。
 - `:6060` 只有 `/gc` 一个路径，不是 pprof。amf 和 smf 本来就在 `:5001` 上开着 pprof（chart 的 `debugProfilePort`），和这里无关。
