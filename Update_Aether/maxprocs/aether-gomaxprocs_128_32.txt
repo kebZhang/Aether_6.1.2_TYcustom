@@ -1,0 +1,10 @@
+# <nf> <GOMAXPROCS>    ("-" = remove, back to Go's default)
+# amf: 128, every other NF: 32
+nrf   32
+amf   128
+ausf  32
+nssf  32
+pcf   32
+smf   32
+udm   32
+udr   32

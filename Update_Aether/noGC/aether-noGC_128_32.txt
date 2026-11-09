@@ -1,0 +1,10 @@
+# <nf> <GOMAXPROCS>    every NF listed here also gets GC off
+# amf: 128, every other NF: 32 (same values as ../maxprocs/aether-gomaxprocs_128_32.txt)
+nrf   32
+amf   128
+ausf  32
+nssf  32
+pcf   32
+smf   32
+udm   32
+udr   32

@@ -1,0 +1,10 @@
+# <nf> <GOMAXPROCS>    ("-" = remove, back to Go's default)
+# Removes GOMAXPROCS from every NF: the state right after Deploy_Aether_K8s.sh.
+nrf   -
+amf   -
+ausf  -
+nssf  -
+pcf   -
+smf   -
+udm   -
+udr   -

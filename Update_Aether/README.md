@@ -9,16 +9,16 @@
 | 文件 | 在哪台机器用 | 作用 |
 |---|---|---|
 | `Dockerfile.nf` | A | 编译单个 NF 的镜像。build context 是仓库根目录 |
-| `build_aether_images.sh` | A | 逐个编译 `NFS` 里列的 NF，最后打成一个 tar 包 `/local/aether-<TAG>.tar` |
-| `apply_aether_images.sh` | B | 把镜像导入 K8s，执行 helm upgrade 换成新 tag，再等 NF 重新注册到 NRF |
+| `build_aether_images.sh` | A | 参数是 tag。逐个编译 `NFS` 里列的 NF，最后打成一个 tar 包 `/local/aether-<tag>.tar` |
+| `apply_aether_images.sh` | B | 参数是 tar 包。把镜像导入 K8s，执行 helm upgrade 换成新 tag，再等 NF 重新注册到 NRF |
 
-下面的 `<A>`、`<B>` 换成两台机器的地址。
+下面以 tag `NF8HTTP_1108` 为例，`<A>`、`<B>` 换成两台机器的地址。
 
-## 1. C：改好 tag，提交代码
+## 1. C：改好 NFS，提交代码
 
-打开 `build_aether_images.sh` 和 `apply_aether_images.sh`，把开头的 `TAG` 和 `NFS` 改成一样的值：
-- `TAG`：每次编译都用一个新的 tag。
-- `NFS`：只填你改过的 NF。
+打开 `build_aether_images.sh` 和 `apply_aether_images.sh`，把开头的 `NFS` 改成一样的值：只填你改过的 NF。
+
+tag 不用改脚本，第 2 步编译时作为参数传入。
 
 ```bash
 cd /mnt/d/UB/Nemo/5GC_project/code/Aether_6.1.2_TYcustom
@@ -31,26 +31,30 @@ git add -A && git commit -m "..." && git push
 cd /local
 git clone https://github.com/kebZhang/Aether_6.1.2_TYcustom.git   # 第一次
 # 以后： cd /local/Aether_6.1.2_TYcustom && git pull
-bash /local/Aether_6.1.2_TYcustom/Update_Aether/build_aether_images.sh
+cd /local/Aether_6.1.2_TYcustom/Update_Aether
+./build_aether_images.sh NF8HTTP_1108
 ```
 
-编译完会生成 `/local/aether-<TAG>.tar`。
+参数就是 tag，每次编译都用一个新的 tag。编译完会生成 `/local/aether-NF8HTTP_1108.tar`。
 
 ## 3. C：从 A 下载 tar，再上传到 B
 
 ```bash
 cd /mnt/d/UB/Nemo/5GC_project/code/Aether_6.1.2_TYcustom/Update_Aether
-scp -i ~/.ssh/cloudlab Tianyang@<A>:/local/aether-<TAG>.tar /tmp/
-scp -i ~/.ssh/cloudlab /tmp/aether-<TAG>.tar apply_aether_images.sh Tianyang@<B>:/local/aether/
+scp -i ~/.ssh/cloudlab Tianyang@<A>:/local/aether-NF8HTTP_1108.tar /tmp/
+scp -i ~/.ssh/cloudlab /tmp/aether-NF8HTTP_1108.tar apply_aether_images.sh Tianyang@<B>:/local/aether/
 ```
+
+不要给 tar 改名：B 上的脚本从文件名 `aether-NF8HTTP_1108.tar` 里取出 tag `NF8HTTP_1108`。
 
 ## 4. B：导入镜像并更新
 
 ```bash
-bash /local/aether/apply_aether_images.sh
+cd /local/aether
+./apply_aether_images.sh aether-NF8HTTP_1108.tar
 ```
 
-最后一行会打印每个 pod 用的镜像，确认改过的 NF 显示的是 `...:<TAG>`。之后照常进 PacketRusher pod 运行 `./entry_aether.sh`。
+最后一行会打印每个 pod 用的镜像，确认改过的 NF 显示的是 `...:NF8HTTP_1108`。之后照常进 PacketRusher pod 运行 `./entry_aether.sh`。
 
 ## 注意
 
