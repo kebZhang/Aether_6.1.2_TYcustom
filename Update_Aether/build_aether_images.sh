@@ -1,11 +1,12 @@
 #!/bin/bash
 # Run on machine A (build machine). Builds one image per NF in NFS from the
 # Aether_6.1.2_TYcustom checkout this script lives in, and saves them all into one tar.
+#   ./build_aether_images.sh <TAG>        e.g. ./build_aether_images.sh NF8HTTP_1108
 set -euo pipefail
 
-TAG=NF8HTTP_1108                                 # new tag per build; apply_aether_images.sh must use the same
-NFS="amf ausf udm udr pcf nrf"                   # keep only the NFs you changed
-OUT=/local/aether-$TAG.tar                       # outside the repo, so git never sees it
+TAG=${1:?usage: ./build_aether_images.sh <TAG>}  # new tag per build
+NFS="amf ausf udm udr pcf nrf"                   # keep only the NFs you changed; apply_aether_images.sh must use the same
+OUT=/local/aether-$TAG.tar                       # outside the repo, so git never sees it; apply_aether_images.sh reads TAG from this name
 
 # Images are named ghcr.io/omec-project/5gc-<nf>:<TAG> because the chart builds
 # every image as <images.repository><images.tags.X> with one shared repository

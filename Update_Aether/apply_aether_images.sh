@@ -1,12 +1,19 @@
 #!/bin/bash
 # Run on machine B (K8s node). Imports the tar from build_aether_images.sh and
 # points the sd-core release at the new tags.
+#   ./apply_aether_images.sh <tar>        e.g. ./apply_aether_images.sh aether-NF8HTTP_1108.tar
 set -euo pipefail
 
-TAG=NF8HTTP_1108                                 # same as build_aether_images.sh
+TAR=${1:?usage: ./apply_aether_images.sh <aether-TAG.tar>}
 NFS="amf ausf udm udr pcf nrf"                    # same as build_aether_images.sh
-TAR=/local/aether/aether-$TAG.tar
 VALUES=/local/aether/aether-sdcore-values.yaml   # uploaded by Deploy_Aether_K8s.sh
+
+# TAG comes from the file name build_aether_images.sh gave the tar: aether-<TAG>.tar
+name=$(basename "$TAR")
+case "$name" in
+  aether-?*.tar) TAG=${name#aether-}; TAG=${TAG%.tar} ;;
+  *) echo "ERROR: expected aether-<TAG>.tar (as written by build_aether_images.sh), got: $name"; exit 1 ;;
+esac
 
 # 1. Import into the node's container runtime
 runtime=$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.containerRuntimeVersion}')
